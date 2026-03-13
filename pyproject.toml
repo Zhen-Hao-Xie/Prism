@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SAME"
+version = "0.0.0"
+description = "SAME: Hierarchical Decoupling for Continual Instruction Tuning of Multimodal Large Language Model"
+readme = "README.md"
+requires-python = ">=3.10"
+
+# NOTE: This repo previously had no packaging metadata, so `pip install -e .` failed.
+# We align dependencies with the typical LLaVA/CoIN environment so the README install
+# commands work out-of-the-box.
+dependencies = [
+  # Torch is pinned to match the upstream baseline. For GPU installs, install the
+  # correct CUDA wheel first (e.g. cu118/cu121), then run `pip install -e .`.
+  "torch==2.0.1",
+  "torchvision==0.15.2",
+
+  "transformers==4.31.0",
+  "tokenizers>=0.12.1,<0.14",
+  "sentencepiece==0.1.99",
+  "shortuuid",
+
+  "accelerate==0.21.0",
+  "peft==0.4.0",
+  "bitsandbytes==0.41.0",
+
+  "pydantic<2,>=1",
+  "markdown2[all]",
+  "numpy",
+  "scikit-learn==1.2.2",
+
+  "gradio==3.35.2",
+  "gradio_client==0.2.9",
+
+  "requests",
+  "httpx==0.24.0",
+  "uvicorn",
+  "fastapi",
+
+  "einops==0.6.1",
+  "einops-exts==0.0.4",
+  "timm==0.6.13",
+]
+
+[project.optional-dependencies]
+train = ["deepspeed==0.10.3", "ninja", "wandb"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = [
+  "checkpoints*",
+  "debug_out*",
+  "results*",
+  "scripts*",
+  ".idea*",
+  "figure*",
+]
