@@ -36,7 +36,7 @@ from llava.model import *
 from llava.mm_utils import tokenizer_image_token
 
 
-from SAME.peft import PeftModel, TaskType, get_peft_model, SAMEConfig, WEIGHTS_NAME, set_peft_model_state_dict
+from PEFT.peft import PeftModel, TaskType, get_peft_model, SAMEConfig, WEIGHTS_NAME, set_peft_model_state_dict
 
 from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -793,7 +793,7 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer,
     return dict(train_dataset=train_dataset,
                 eval_dataset=None,
                 data_collator=data_collator)
-from SAME.peft.tuners.same import SAMELinear
+from PEFT.peft.tuners.same import SAMELinear
 def load_model_from_previous_task(model, previous_task_model_path):
 
     import torch
