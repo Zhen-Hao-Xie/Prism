@@ -57,6 +57,8 @@ from .tuners import (
     PromptTuningInit,
     SAMEConfig,
     SAMEModel,
+    HiDeMOELoraConfig,
+    HiDeMOELoraModel,
 )
 from .utils import (
     TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING,

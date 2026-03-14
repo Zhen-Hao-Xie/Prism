@@ -47,7 +47,7 @@ from .tuners import (
     PrefixEncoder,
     PromptEmbedding,
     PromptEncoder,
-    SAMEModel,
+    HiDeMOELoraModel,
 )
 from .utils import (
     SAFETENSORS_WEIGHTS_NAME,
@@ -76,7 +76,7 @@ PEFT_TYPE_TO_MODEL_MAPPING = {
     PeftType.ADALORA: AdaLoraModel,
     PeftType.ADAPTION_PROMPT: AdaptionPromptModel,
     PeftType.IA3: IA3Model,
-    PeftType.MOE_LORA_SAME: SAMEModel,
+    PeftType.MOE_LORA_HiDe: HiDeMOELoraModel,
 }
 
 
@@ -115,7 +115,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         if not isinstance(peft_config, PromptLearningConfig):
             self.peft_config[adapter_name] = peft_config
 
-
+            #!在这里面设置了使用的对应模型
             self.base_model = PEFT_TYPE_TO_MODEL_MAPPING[peft_config.peft_type](
                 self.base_model, self.peft_config, adapter_name
             )

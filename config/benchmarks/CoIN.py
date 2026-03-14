@@ -1,71 +1,185 @@
-# config/coin.py
-from ..paths_config import INSTRUCTION_DIR, CHECKPOINT_DIR,PRETRAIN_MM_PROJECTOR
+# config/benchmarks/coin.py
+from ..paths_config import INSTRUCTION_DIR, CHECKPOINT_DIR, PRETRAIN_MM_PROJECTOR
 
 # CoIN Benchmark 8个任务的配置
 COIN_TASKS = [
     {
         "cur_task": 0,
         "name": "ScienceQA",
-        "data_path": f"{INSTRUCTION_DIR}/ScienceQA/train.json",
-        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task0",
-        "batch_size": 1,
+        "train_data_path": f"{INSTRUCTION_DIR}/ScienceQA/train.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/ScienceQA/test.json",
+        "eval_annotation_path": f"{INSTRUCTION_DIR}/ScienceQA",
+        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task0_llava_lora",
+        "batch_size": 2,
         "pretrain_mm_mlp_adapter": f"{PRETRAIN_MM_PROJECTOR}",
-        "previous_task":None,
+        "previous_task": None,
+        # 评估相关配置
+        "eval": {
+            "inference_module": "llava.eval.model_science_qa",
+            "eval_module": "llava.eval.eval_science_qa",
+            "inference_args": [
+                "--mm-text-select-layer", "-1",
+                "--single-pred-prompt"
+            ],
+            "eval_args": [
+                "--base-dir", "{eval_annotation_path}",
+                "--result-file", "{result_file}",
+                "--output-file", "{output_dir}/output.jsonl",
+                "--output-result", "{output_dir}/output_result.jsonl",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
     },
     {
         "cur_task": 1,
         "name": "TextVQA",
-        "data_path": f"{INSTRUCTION_DIR}/TextVQA/train.json",
-        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task1",
-        "batch_size": 1,
-        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task0",
+        "train_data_path": f"{INSTRUCTION_DIR}/TextVQA/train.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/TextVQA/test.json",
+        "eval_annotation_path": f"{INSTRUCTION_DIR}/TextVQA/valid.json",
+        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task1_llava_lora",
+        "batch_size": 2,
+        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task0_llava_lora",
+        "eval": {
+            "inference_module": "llava.eval.model_others",
+            "eval_module": "llava.eval.eval_textvqa",
+            "inference_args": [],
+            "eval_args": [
+                "--annotation-file", "{eval_annotation_path}",
+                "--result-file", "{result_file}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
     },
     {
         "cur_task": 2,
         "name": "ImageNet",
-        "data_path": f"{INSTRUCTION_DIR}/ImageNet/train.json",
-        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task2",
+        "train_data_path": f"{INSTRUCTION_DIR}/ImageNet/train.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/ImageNet/test.json",
+        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task2_llava_lora",
         "batch_size": 8,
-        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task1",
+        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task1_llava_lora",
+        "eval": {
+            "inference_module": "llava.eval.model_others",
+            "eval_module": "llava.eval.eval_imagenet",
+            "inference_args": [],
+            "eval_args": [
+                "--test-file", "{test_data_path}",
+                "--result-file", "{result_file}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
     },
     {
         "cur_task": 3,
         "name": "GQA",
-        "data_path": f"{INSTRUCTION_DIR}/GQA/train.json",
-        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task3",
+        "train_data_path": f"{INSTRUCTION_DIR}/GQA/train.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/GQA/test.json",
+        "eval_annotation_path": f"{INSTRUCTION_DIR}/GQA",
+        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task3_llava_lora",
         "batch_size": 8,
-        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task2",
+        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task2_llava_lora",
+        "eval": {
+            "inference_module": "llava.eval.model_others",
+            "eval_module": "llava.eval.eval_gqa",
+            "inference_args": [],
+            "eval_args": [
+                "--tier", "testdev_balanced",
+                "--path", "{output_dir}",
+                "--question-dir", "{eval_annotation_path}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": True,
+            "conversion_script": "./tools/convert_gqa_for_eval.py",
+            "conversion_args": [
+                "--src", "{result_file}",
+                "--dst", "{output_dir}/testdev_balanced_predictions.json"
+            ],
+        }
     },
     {
         "cur_task": 4,
         "name": "VizWiz",
-        "data_path": f"{INSTRUCTION_DIR}/VizWiz/train.json",
-        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task4",
+        "train_data_path": f"{INSTRUCTION_DIR}/VizWiz/train.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/VizWiz/val.json",
+        "eval_annotation_path": f"{INSTRUCTION_DIR}/VizWiz/val.json",
+        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task4_llava_lora",
         "batch_size": 8,
-        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task3",
+        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task3_llava_lora",
+        "eval": {
+            "inference_module": "llava.eval.model_others",
+            "eval_module": "llava.eval.eval_vizwiz",
+            "inference_args": [],
+            "eval_args": [
+                "--result-file", "{result_file}",
+                "--annotation-file", "{eval_annotation_path}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
     },
     {
         "cur_task": 5,
         "name": "Grounding",
-        "data_path": f"{INSTRUCTION_DIR}/Grounding/train.json",
-        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task5",
+        "train_data_path": f"{INSTRUCTION_DIR}/Grounding/train.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/Grounding/test.json",
+        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task5_llava_lora",
         "batch_size": 8,
-        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task4",
+        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task4_llava_lora",
+        "eval": {
+            "inference_module": "llava.eval.model_others",
+            "eval_module": "llava.eval.eval_grounding",
+            "inference_args": [],
+            "eval_args": [
+                "--test-file", "{test_data_path}",
+                "--result-file", "{result_file}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
     },
     {
         "cur_task": 6,
         "name": "VQAv2",
-        "data_path": f"{INSTRUCTION_DIR}/VQAv2/train.json",
-        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task6",
+        "train_data_path": f"{INSTRUCTION_DIR}/VQAv2/train.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/VQAv2/val.json",
+        "eval_annotation_path": f"{INSTRUCTION_DIR}/VQAv2/val.json",
+        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task6_llava_lora",
         "batch_size": 8,
-        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task5",
+        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task5_llava_lora",
+        "eval": {
+            "inference_module": "llava.eval.model_others",
+            "eval_module": "llava.eval.eval_vqav2",
+            "inference_args": [],
+            "eval_args": [
+                "--result-file", "{result_file}",
+                "--annotation-file", "{eval_annotation_path}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
     },
     {
         "cur_task": 7,
         "name": "OCRVQA",
-        "data_path": f"{INSTRUCTION_DIR}/OCRVQA/train.json",
-        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task7",
+        "train_data_path": f"{INSTRUCTION_DIR}/OCRVQA/train.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/OCRVQA/test.json",
+        "eval_annotation_path": f"{INSTRUCTION_DIR}/OCRVQA/test.json",
+        "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task7_llava_lora",
         "batch_size": 8,
-        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task6",
+        "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task6_llava_lora",
+        "eval": {
+            "inference_module": "llava.eval.model_others",
+            "eval_module": "llava.eval.eval_ocrvqa",
+            "inference_args": [],
+            "eval_args": [
+                "--annotation-file", "{eval_annotation_path}",
+                "--result-file", "{result_file}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
     },
 ]

@@ -42,10 +42,10 @@ cd "$(dirname "$0")/.."
 # 依次运行指定的任务
 for task_id in "${TASKS[@]}"; do
     echo "=========================================="
-    echo "🚀 Running $BENCHMARK Task $task_id"
+    echo "Training $BENCHMARK Task $task_id"
     echo "=========================================="
     
-    python scripts/run_task.py --benchmark "$BENCHMARK" --task "$task_id" --gpus "$GPUS"
+    python tools/train_task.py --benchmark "$BENCHMARK" --task "$task_id" --gpus "$GPUS"
     
     if [ $? -ne 0 ]; then
         echo "❌ Task $task_id failed"

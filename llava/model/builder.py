@@ -22,7 +22,7 @@ import torch
 from llava.model import *
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
-sys.path.append('/data2/mnt2/zhoudw/zh/tangjt/PyMCIT')
+sys.path.append('/mnt/data3/zh/tjt/HiDe-LLaVA')
 
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", text_tower=None, **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
@@ -59,7 +59,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             print('Loading LLaVA from base model...')
             model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
             if not text_tower:
-                raise ValueError('text_tower must be provided for SAME routing (e.g. openai/clip-vit-large-patch14).')
+                raise ValueError('text_tower must be provided for HiDe routing (e.g. openai/clip-vit-large-patch14).')
 
             clip_tokenizer = AutoTokenizer.from_pretrained(
                 text_tower,
@@ -94,7 +94,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
             model.load_state_dict(non_lora_trainables, strict=False)
 
-            from PEFT.peft import PeftModel, TaskType, get_peft_model, SAMEConfig, WEIGHTS_NAME, set_peft_model_state_dict
+            from PEFT.peft import PeftModel, TaskType, get_peft_model, HiDeMOELoraConfig, WEIGHTS_NAME, set_peft_model_state_dict
             # else:
             #     from peft import PeftModel
             print('Loading LoRA weights...')

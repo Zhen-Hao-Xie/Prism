@@ -18,7 +18,7 @@ class CLIPVisionTower(nn.Module):
         if not delay_load:
             self.load_model()
         else:
-            print(f"the clip name is {self.vision_tower_name}")
+            print(f"the path of clip is {self.vision_tower_name}")
             self.cfg_only = CLIPVisionConfig.from_pretrained(self.vision_tower_name)
 
     def load_model(self):

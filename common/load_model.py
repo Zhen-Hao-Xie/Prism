@@ -1,30 +1,83 @@
-#    Copyright 2023 Haotian Liu
-#
-#    Licensed under the Apache License, Version 2.0 (the "License");
-#    you may not use this file except in compliance with the License.
-#    You may obtain a copy of the License at
-#
-#        http://www.apache.org/licenses/LICENSE-2.0
-#
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS,
-#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#    See the License for the specific language governing permissions and
-#    limitations under the License.
-
-
-import os, sys
-import warnings
+import torch
+import transformers
+from typing import Tuple, Optional
+import os
+from .load_backbone import (
+    setup_quantization,
+    load_pretrained_model,
+    load_tokenizer,
+    setup_tokenizer,
+    load_clip_tokenizer,
+    initialize_multimodal_modules,
+    adjust_precision,
+    prepare_model_for_kbit,
+    setup_gradient_checkpointing,
+)
+from .peft_utils import create_lora_config, apply_lora
+from .load_checkpoint import load_from_checkpoint
+from .load_config import ModelArguments, DataArguments, TrainingArguments
+from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 import shutil
-
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 import torch
 from llava.model import *
-from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+import warnings
 
-sys.path.append('/data2/mnt2/zhoudw/zh/tangjt/PyMCIT')
 
-def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", text_tower=None, **kwargs):
+def load_model_for_train(
+    model_args: ModelArguments,
+    data_args: DataArguments,
+    training_args: TrainingArguments,
+) -> Tuple[torch.nn.Module, transformers.PreTrainedTokenizer, DataArguments]:
+    """
+    加载用于训练的模型。
+    """
+    compute_dtype = torch.bfloat16 if training_args.bf16 else torch.float16 if training_args.fp16 else torch.float32
+    bnb_args = setup_quantization(training_args, compute_dtype)
+
+    has_vision = model_args.vision_tower is not None
+    model = load_pretrained_model(model_args.model_name_or_path, training_args, bnb_args, has_vision)
+
+    if model_args.freeze_backbone:
+        model.model.requires_grad_(False)
+
+    model = prepare_model_for_kbit(model, training_args, compute_dtype)
+    model = setup_gradient_checkpointing(model, training_args)
+
+    tokenizer = load_tokenizer(model_args.model_name_or_path, training_args)
+    setup_tokenizer(tokenizer, model, model_args.version)
+
+    # 训练模式：如果需要 LoRA，则添加
+    if training_args.lora_enable:
+        lora_config = create_lora_config(training_args, model_args, model)
+        model = apply_lora(model, lora_config, training_args)
+
+    # 如果是增量训练，加载之前任务的 checkpoint
+    if model_args.previous_task_model_path is not None and os.path.exists(model_args.previous_task_model_path):
+        model = load_from_checkpoint(
+            model,
+            model_args.previous_task_model_path,
+            merge_lora=False,                # 训练时不合并
+            for_incremental_training=True    # 标记为增量训练，以正确加载权重
+        )
+
+    if model_args.vision_tower is not None:
+        model, data_args = initialize_multimodal_modules(model, model_args, training_args, data_args, tokenizer)
+
+    model = adjust_precision(model, training_args)
+
+    if model_args.text_tower is not None:
+        clip_tokenizer = load_clip_tokenizer(model_args.text_tower, training_args)
+        model.set_clip_tokenizer(clip_tokenizer)
+
+    model.set_tokenizer(tokenizer)
+    if hasattr(model, 'set_cur_task'):
+        model.set_cur_task(model_args.cur_task, model_args.expert_num)
+
+    model.train()
+    return model, tokenizer, data_args
+
+def load_model_for_inference(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", text_tower=None, **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
 
     if device != "cuda":
@@ -59,7 +112,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             print('Loading LLaVA from base model...')
             model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
             if not text_tower:
-                raise ValueError('text_tower must be provided for SAME routing (e.g. openai/clip-vit-large-patch14).')
+                raise ValueError('text_tower must be provided for HiDe routing (e.g. openai/clip-vit-large-patch14')
 
             clip_tokenizer = AutoTokenizer.from_pretrained(
                 text_tower,
@@ -80,21 +133,14 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             if os.path.exists(os.path.join(model_path, 'non_lora_trainables.bin')):
                 non_lora_trainables = torch.load(os.path.join(model_path, 'non_lora_trainables.bin'), map_location='cpu')
             else:
-                # this is probably from HF Hub
-                from huggingface_hub import hf_hub_download
-                def load_from_hf(repo_id, filename, subfolder=None):
-                    cache_file = hf_hub_download(
-                        repo_id=repo_id,
-                        filename=filename,
-                        subfolder=subfolder)
-                    return torch.load(cache_file, map_location='cpu')
-                non_lora_trainables = load_from_hf(model_path, 'non_lora_trainables.bin')
+                warnings.warn('There is no corresbonding non_lora_trainables.bin')
+                assert(0)
             non_lora_trainables = {(k[11:] if k.startswith('base_model.') else k): v for k, v in non_lora_trainables.items()}
             if any(k.startswith('model.model.') for k in non_lora_trainables):
                 non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
             model.load_state_dict(non_lora_trainables, strict=False)
 
-            from SAME.peft import PeftModel, TaskType, get_peft_model, SAMEConfig, WEIGHTS_NAME, set_peft_model_state_dict
+            from PEFT.peft import PeftModel, TaskType, get_peft_model, HiDeMOELoraConfig, WEIGHTS_NAME, set_peft_model_state_dict
             # else:
             #     from peft import PeftModel
             print('Loading LoRA weights...')
@@ -105,52 +151,16 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         elif model_base is not None:
             # this may be mm projector only
             print('Loading LLaVA from base model...')
-            if 'mpt' in model_name.lower():
-                if not os.path.isfile(os.path.join(model_path, 'configuration_mpt.py')):
-                    shutil.copyfile(os.path.join(model_base, 'configuration_mpt.py'), os.path.join(model_path, 'configuration_mpt.py'))
-                tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=True)
-                cfg_pretrained = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
-                model = LlavaMPTForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
-            else:
-                tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
-                cfg_pretrained = AutoConfig.from_pretrained(model_path)
-                model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
+            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
+            cfg_pretrained = AutoConfig.from_pretrained(model_path)
+            model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
 
             mm_projector_weights = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
             mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
             model.load_state_dict(mm_projector_weights, strict=False)
         else:
-            if 'mpt' in model_name.lower():
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
-                model = LlavaMPTForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-            else:
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-                model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-    else:
-        # Load language model
-        if model_base is not None:
-            # PEFT model
-            from peft import PeftModel
-            tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
-            model = AutoModelForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, **kwargs)
-            print(f"Loading LoRA weights from {model_path}")
-            model = PeftModel.from_pretrained(model, model_path)
-            print(f"Merging weights")
-            model = model.merge_and_unload()
-            print('Convert to FP16...')
-            model.to(torch.float16)
-        else:
-            use_fast = False
-            if 'mpt' in model_name.lower():
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
-                model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, trust_remote_code=True, **kwargs)
-            else:
-                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
-                model = AutoModelForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
-
-    image_processor = None
-
-    if 'llava' in model_name.lower():
+            tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+            model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
         mm_use_im_start_end = getattr(model.config, "mm_use_im_start_end", False)
         mm_use_im_patch_token = getattr(model.config, "mm_use_im_patch_token", True)
         if mm_use_im_patch_token:
@@ -170,7 +180,9 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             if not getattr(text_tower_model, 'is_loaded', True):
                 text_tower_model.load_model()
             text_tower_model.to(device=device, dtype=torch.float16)
-
+    else:
+        warnings.warn('The model is not llava')
+        assert(0)
     if hasattr(model.config, "max_sequence_length"):
         context_len = model.config.max_sequence_length
     else:

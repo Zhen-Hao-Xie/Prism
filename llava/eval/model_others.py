@@ -6,101 +6,31 @@ from tqdm import tqdm
 import shortuuid
 
 from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from llava.conversation import conv_templates, SeparatorStyle
-from llava.model.builder import load_pretrained_model
-from llava.utils import disable_torch_init
-from llava.mm_utils import tokenizer_image_token, get_model_name_from_path, KeywordsStoppingCriteria, process_images
+from llava.conversation import conv_templates
+from common.load_model import load_model_for_inference
+from common.file_manager import load_questions
+from common.utils import get_chunk
+from common.data_manager import ImageFinder
+from llava.mm_utils import tokenizer_image_token, process_images
 from torch.utils.data import Dataset, DataLoader
-
 from PIL import Image
-import math
 
 
-
-
-
-
-def load_questions(question_file: str):
-    question_file = os.path.expanduser(question_file)
-    if question_file.endswith('.jsonl'):
-        questions = []
-        with open(question_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                questions.append(json.loads(line))
-        return questions
-
-    with open(question_file, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-
-
-def split_list(lst, n):
-    """Split a list into n (roughly) equal-sized chunks"""
-    chunk_size = math.ceil(len(lst) / n)  # integer division
-    return [lst[i:i+chunk_size] for i in range(0, len(lst), chunk_size)]
-
-
-def get_chunk(lst, n, k):
-    chunks = split_list(lst, n)
-    return chunks[k]
-
-# Custom dataset class
-class CustomDataset(Dataset):
-    def __init__(self, questions, image_folder, tokenizer, image_processor, model_config, conv_mode: str):
+class EvalDataset(Dataset):
+    def __init__(self, questions, image_folder, tokenizer, image_processor, model_config, conv_mode):
         self.questions = questions
-        self.image_folder = image_folder
+        self.image_finder = ImageFinder(image_folder) if image_folder else None
         self.tokenizer = tokenizer
         self.image_processor = image_processor
         self.model_config = model_config
         self.conv_mode = conv_mode
-        self._image_index = None
 
-    def _build_image_index(self):
-        index = {}
-        if not self.image_folder:
-            self._image_index = index
-            return
-        print(f"Building image index for folder: {self.image_folder}")
-        for dirpath, _, filenames in tqdm(os.walk(self.image_folder)):
-            for filename in filenames:
-                lower = filename.lower()
-                if not lower.endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp")):
-                    continue
-                # Keep first occurrence; ImageNet val filenames are unique.
-                index.setdefault(filename, os.path.join(dirpath, filename))
-
-        self._image_index = index
-
-    def _resolve_image_path(self, image_file: str) -> str:
-        # Case 1: image_file is already relative to image_folder (flat or nested).
-        direct_path = os.path.join(self.image_folder, image_file)
-        if os.path.isfile(direct_path):
-            return direct_path
-
-        # Case 2: image_folder contains class subfolders (e.g., val/n01440764/*.JPEG)
-        # but the annotation only stores the basename (e.g., ILSVRC2012_val_00000014.JPEG).
-        if self._image_index is None:
-            self._build_image_index()
-
-        candidate = None
-        if self._image_index is not None:
-            candidate = self._image_index.get(os.path.basename(image_file))
-
-        if candidate and os.path.isfile(candidate):
-            return candidate
-
-        raise FileNotFoundError(
-            f"Image not found: {image_file} under image_folder={self.image_folder}."
-            f"Tried: {direct_path} and recursive lookup in subfolders."
-        )
-
-    def __getitem__(self, index):
-        line = self.questions[index]
+    def __getitem__(self, idx):
+        line = self.questions[idx]
         image_file = line["image"]
         qs = line["text"]
+
+        # 构建 prompt
         if self.model_config.mm_use_im_start_end:
             qs = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + '\n' + qs
         else:
@@ -111,98 +41,96 @@ class CustomDataset(Dataset):
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
 
-        image_path = self._resolve_image_path(image_file)
+        # 加载图像
+        image_path = self.image_finder.find(image_file) if self.image_finder else None
         image = Image.open(image_path).convert('RGB')
         image_tensor = process_images([image], self.image_processor, self.model_config)[0]
 
         input_ids = tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt')
-
         return input_ids, image_tensor
 
     def __len__(self):
         return len(self.questions)
 
 
-# DataLoader
-def create_data_loader(questions, image_folder, tokenizer, image_processor, model_config, conv_mode: str, batch_size=1, num_workers=4):
-    assert batch_size == 1, "batch_size must be 1"
-    dataset = CustomDataset(questions, image_folder, tokenizer, image_processor, model_config, conv_mode=conv_mode)
-    data_loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers, shuffle=False)
-    return data_loader
+@torch.inference_mode()
+def generate_outputs(model, input_ids, image_tensor, args):
+    """封装生成逻辑"""
+    return model.generate(
+        input_ids,
+        images=image_tensor.to(dtype=torch.float16, device='cuda', non_blocking=True),
+        do_sample=args.temperature > 0,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        num_beams=args.num_beams,
+        max_new_tokens=args.max_new_tokens,
+        use_cache=True
+    )
 
 
 def eval_model(args):
-    # Model
-    disable_torch_init()
+    # 加载模型
     model_path = os.path.expanduser(args.model_path)
-    model_name = get_model_name_from_path(model_path)
-    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name, text_tower=args.text_tower)
+    model_name = args.model_name or os.path.basename(model_path)
+    tokenizer, model, image_processor, context_len = load_model_for_inference(
+        model_path, args.model_base, model_name, text_tower=args.text_tower
+    )
 
+    # 加载问题并按 chunk 分割
     questions = load_questions(args.question_file)
     questions = get_chunk(questions, args.num_chunks, args.chunk_idx)
+
+    # 准备输出文件
     answers_file = os.path.expanduser(args.answers_file)
-    out_dir = os.path.dirname(answers_file)
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-    ans_file = open(answers_file, "w", encoding="utf-8")
-    print(f"Evaluating {model_name} on {len(questions)} samples, writing to {answers_file}.")
+    os.makedirs(os.path.dirname(answers_file), exist_ok=True)
 
-    if 'plain' in model_name and 'finetune' not in model_name.lower() and 'mmtag' not in args.conv_mode:
-        args.conv_mode = args.conv_mode + '_mmtag'
-        print(f'It seems that this is a plain model, but it is not using a mmtag prompt, auto switching to {args.conv_mode}.')
+    # 创建数据集和 DataLoader
+    dataset = EvalDataset(
+        questions, args.image_folder, tokenizer, image_processor, model.config, args.conv_mode
+    )
+    dataloader = DataLoader(dataset, batch_size=1, num_workers=args.num_workers, shuffle=False)
 
-    data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config, conv_mode=args.conv_mode, num_workers=args.num_workers)
+    # 开始推理
+    with open(answers_file, 'w', encoding='utf-8') as f:
+        for (input_ids, image_tensor), sample in tqdm(zip(dataloader, questions), total=len(questions)):
+            input_ids = input_ids.to('cuda', non_blocking=True)
 
-    for (input_ids, image_tensor), line in tqdm(zip(data_loader, questions), total=len(questions)):
-        idx = line["question_id"]
-        cur_prompt = line["text"]
+            output_ids = generate_outputs(model, input_ids, image_tensor, args)
 
-        input_ids = input_ids.to(device='cuda', non_blocking=True)
+            # 解码输出
+            input_len = input_ids.shape[1]
+            output_text = tokenizer.decode(output_ids[0, input_len:], skip_special_tokens=True).strip()
 
-        with torch.inference_mode():
-            output_ids = model.generate(
-                input_ids,
-                images=image_tensor.to(dtype=torch.float16, device='cuda', non_blocking=True),
-                do_sample=True if args.temperature > 0 else False,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                num_beams=args.num_beams,
-                max_new_tokens=args.max_new_tokens,
-                use_cache=True)
+            # 写入结果
+            result = {
+                "question_id": sample["question_id"],
+                "prompt": sample["text"],
+                "text": output_text,
+                "answer_id": shortuuid.uuid(),
+                "model_id": model_name,
+                "metadata": {}
+            }
+            f.write(json.dumps(result, ensure_ascii=False) + '\n')
+            f.flush()
 
-        input_token_len = input_ids.shape[1]
-        n_diff_input_output = (input_ids != output_ids[:, :input_token_len]).sum().item()
-        if n_diff_input_output > 0:
-            print(f'[Warning] {n_diff_input_output} output_ids are not the same as the input_ids')
-        outputs = tokenizer.batch_decode(output_ids[:, input_token_len:], skip_special_tokens=True)[0]
-        outputs = outputs.strip()
-
-        ans_id = shortuuid.uuid()
-        ans_file.write(json.dumps({"question_id": idx,
-                                   "prompt": cur_prompt,
-                                   "text": outputs,
-                                   "answer_id": ans_id,
-                                   "model_id": model_name,
-                                   "metadata": {}}) + "\n")
-        ans_file.flush()
-    ans_file.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-path", type=str, default="facebook/opt-350m")
+    parser.add_argument("--model-path", type=str, required=True)
     parser.add_argument("--model-base", type=str, default=None)
-    parser.add_argument("--image-folder", type=str, default="")
-    parser.add_argument("--question-file", type=str, default="tables/question.jsonl")
-    parser.add_argument("--answers-file", type=str, default="answer.jsonl")
+    parser.add_argument("--model-name", type=str, default=None, help="Override model name")
+    parser.add_argument("--image-folder", type=str, required=True)
+    parser.add_argument("--question-file", type=str, required=True)
+    parser.add_argument("--answers-file", type=str, required=True)
     parser.add_argument("--conv-mode", type=str, default="llava_v1")
-    parser.add_argument("--text-tower", type=str, default="")
+    parser.add_argument("--text-tower", type=str, required=True)
     parser.add_argument("--num-chunks", type=int, default=1)
     parser.add_argument("--chunk-idx", type=int, default=0)
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--top_p", type=float, default=None)
-    parser.add_argument("--num_beams", type=int, default=1)
-    parser.add_argument("--max_new_tokens", type=int, default=128)
-    parser.add_argument("--num-workers", type=int, default=0, help="DataLoader workers. If you see hanging/crashes, keep this at 0.")
+    parser.add_argument("--num-beams", type=int, default=1)
+    parser.add_argument("--max-new-tokens", type=int, default=128)
+    parser.add_argument("--num-workers", type=int, default=0)
     args = parser.parse_args()
 
     eval_model(args)

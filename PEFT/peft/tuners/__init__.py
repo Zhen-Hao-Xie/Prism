@@ -25,3 +25,4 @@ from .p_tuning import PromptEncoder, PromptEncoderConfig, PromptEncoderReparamet
 from .prefix_tuning import PrefixEncoder, PrefixTuningConfig
 from .prompt_tuning import PromptEmbedding, PromptTuningConfig, PromptTuningInit
 from .same import SAMEConfig, SAMEModel
+from .clitmoelora import HiDeMOELoraConfig,HiDeMOELoraModel

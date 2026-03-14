@@ -99,7 +99,18 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         for name, param in self.text_anchors.named_parameters():
             param.requires_grad = True
         
+    def set_boundary_for_save(self):
+        for name, param in self.image_boundary.named_parameters():
+            param.requires_grad = True
+        
+        for name, param in self.text_boundary.named_parameters():
+            param.requires_grad = True
 
+        for name, param in self.image_anchors.named_parameters():
+            param.requires_grad = True
+        
+        for name, param in self.text_anchors.named_parameters():
+            param.requires_grad = True
 
 
     def get_model(self):

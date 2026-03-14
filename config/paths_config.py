@@ -28,4 +28,4 @@ RESULT_DIR = f"{PROJECT_ROOT}/results"
 LOG_DIR = f"{PROJECT_ROOT}/logs"
 
 # Deepspeed配置
-DEEPSPEED_CONFIG = f"{PROJECT_ROOT}/scripts/zero2.json"
+DEEPSPEED_CONFIG = f"{PROJECT_ROOT}/config/deepspeed/zero2.json"

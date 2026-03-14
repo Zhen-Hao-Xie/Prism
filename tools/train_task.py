@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# scripts/run_task.py
+# run_task.py
 import os
 import subprocess
 import sys
@@ -7,14 +7,20 @@ import argparse
 from pathlib import Path
 
 # 添加项目根目录到Python路径
-project_root = Path(__file__).parent.parent.absolute()
+project_root = Path(__file__).parent.absolute()
 sys.path.insert(0, str(project_root))
 
 from config.paths_config import (
     BASE_MODEL_PATH, CLIP_PATH, PRETRAIN_MM_PROJECTOR,
     IMAGE_FOLDER, DEEPSPEED_CONFIG
 )
-from CoIN import COIN_TASKS
+from config.benchmarks.CoIN import COIN_TASKS
+
+# 可以在这里添加更多benchmark
+BENCHMARKS = {
+    "coin": COIN_TASKS,
+    # "other": OTHER_TASKS,  # 可以添加其他benchmark
+}
 
 def build_command(task, gpus="0,1", port=29601, debug=False):
     """构建训练命令"""
@@ -23,7 +29,7 @@ def build_command(task, gpus="0,1", port=29601, debug=False):
         "deepspeed",
         f"--include=localhost:{gpus}",
         f"--master_port={port}",
-        "llava/train/train_mem_MOE.py",
+        "llava/train/train_mem.py",
         "--deepspeed", DEEPSPEED_CONFIG,
         "--lora_enable", "True",
         "--lora_r", "64",
@@ -31,10 +37,9 @@ def build_command(task, gpus="0,1", port=29601, debug=False):
         "--mm_projector_lr", "2e-5",
         "--expert_num", "8",
         "--model_name_or_path", BASE_MODEL_PATH,
-        "--pretrain_mm_mlp_adapter", PRETRAIN_MM_PROJECTOR,
         "--freeze_mm_mlp_adapter", "True",
         "--version", "v1",
-        "--data_path", task["data_path"],
+        "--data_path", task["train_data_path"],
         "--image_folder", IMAGE_FOLDER,
         "--vision_tower", CLIP_PATH,
         "--text_tower", CLIP_PATH,
@@ -65,17 +70,25 @@ def build_command(task, gpus="0,1", port=29601, debug=False):
         "--lazy_preprocess", "True",
         "--report_to", "none"
     ]
-    
+
+    # 如果任务指定了pretrain_mm_mlp_adapter，使用任务特定的
+    if "pretrain_mm_mlp_adapter" in task:
+        cmd.extend(["--pretrain_mm_mlp_adapter", task["pretrain_mm_mlp_adapter"]])
     # 添加前一个任务的路径（如果不是第一个任务）
-    if task["previous_task"]:
+    elif task["previous_task"]:
         cmd.extend(["--previous_task_model_path", task["previous_task"]])
+    else:
+        assert(0)
     
     return cmd
 
 def main():
-    parser = argparse.ArgumentParser(description='Run a single CoIN task')
-    parser.add_argument('--task', type=int, required=True, choices=range(8),
-                       help='Task ID to run (0-7)')
+    parser = argparse.ArgumentParser(description='Run a task from a benchmark')
+    parser.add_argument('--benchmark', type=str, default='coin',
+                       choices=BENCHMARKS.keys(),
+                       help='Benchmark name (default: coin)')
+    parser.add_argument('--task', type=int, required=True,
+                       help='Task ID to run')
     parser.add_argument('--gpus', type=str, default='0,1',
                        help='GPUs to use (default: 0,1)')
     parser.add_argument('--port', type=int, default=29601,
@@ -85,20 +98,28 @@ def main():
     
     args = parser.parse_args()
     
+    # 获取benchmark的任务列表
+    tasks = BENCHMARKS[args.benchmark]
+    
+    # 检查任务ID是否有效
+    if args.task < 0 or args.task >= len(tasks):
+        print(f"❌ Error: Task {args.task} not in {args.benchmark} benchmark (0-{len(tasks)-1})")
+        sys.exit(1)
+    
     # 获取任务配置
-    task = COIN_TASKS[args.task]
+    task = tasks[args.task]
     
     print(f"\n{'='*60}")
-    print(f"Running Task {args.task}: {task['name']}")
+    print(f"Training on benchmark{args.benchmark} Task {args.task}: {task['name']}")
     print(f"{'='*60}")
-    print(f"Data: {task['data_path']}")
+    print(f"Data: {task['train_data_path']}")
     print(f"Batch Size: {task['batch_size']}")
     print(f"Output: {task['output_dir']}")
     if task['previous_task']:
-        print(f"Loading from: {task['previous_task']}")
+        print(f"🔄 Loading from: {task['previous_task']}")
     else:
-        print(f"First task - no previous checkpoint")
-    print(f"GPUs: {args.gpus}")
+        print(f"✨ First task - no previous checkpoint")
+    print(f"🎮 GPUs: {args.gpus}")
     print(f"{'='*60}\n")
     
     # 构建并执行命令
