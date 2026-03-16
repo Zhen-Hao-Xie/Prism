@@ -3,6 +3,7 @@ import random
 import torch
 import os
 import copy
+from typing import Any, Dict, Iterator, List
 from torch.utils.data import Dataset
 from PIL import Image
 from typing import Dict, Sequence, Optional
@@ -12,6 +13,8 @@ from llava.constants import IGNORE_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_
 from llava import conversation as conversation_lib
 from llava.mm_utils import tokenizer_image_token
 from tqdm import tqdm
+from common.file_manager import load_questions
+from common.utils import get_chunk
 
 
 def expand2square(pil_img, background_color):
@@ -515,3 +518,27 @@ class ImageFinder:
         raise FileNotFoundError(
             f"Image not found: {image_file} under image_folder={self.image_folder}"
         )
+    
+
+class InferenceDataset:
+    def __init__(self, question_file: str, num_chunks: int = 1, chunk_idx: int = 0) -> None:
+        self.question_file = os.path.expanduser(question_file)
+        self.num_chunks = num_chunks
+        self.chunk_idx = chunk_idx
+        self._samples: List[Dict[str, Any]] | None = None
+
+    def load(self) -> List[Dict[str, Any]]:
+        if self._samples is None:
+            samples = load_questions(self.question_file)
+            self._samples = get_chunk(samples, self.num_chunks, self.chunk_idx)
+        return self._samples
+
+    def __len__(self) -> int:
+        return len(self.load())
+
+    def __iter__(self) -> Iterator[Dict[str, Any]]:
+        return iter(self.load())
+
+    @property
+    def samples(self) -> List[Dict[str, Any]]:
+        return self.load()
