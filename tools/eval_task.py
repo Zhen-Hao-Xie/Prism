@@ -5,6 +5,9 @@ import sys
 import subprocess
 import argparse
 from pathlib import Path
+import concurrent.futures
+import threading
+from typing import List, Dict, Any
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent.absolute()
@@ -15,12 +18,12 @@ from config.paths_config import (
 )
 from config.benchmarks import BENCHMARKS
 
-# 任务名到推理方法的映射（根据你的第二个文件定义）
+# 任务名到推理方法的映射
 INFERENCE_METHOD_MAP = {
     "ScienceQA": "scienceqa",
 }
 
-# 任务名到评估子命令的映射（根据你的第三个文件定义）
+# 任务名到评估子命令的映射
 EVAL_TASK_MAP = {
     "ScienceQA": "scienceqa",
     "TextVQA": "textvqa",
@@ -47,7 +50,6 @@ def format_args(template, **kwargs):
     for arg in template:
         if isinstance(arg, str) and "{" in arg and "}" in arg:
             try:
-                # 将替换后的值转为字符串
                 val = arg.format(**{k: str(v) for k, v in kwargs.items()})
                 formatted.append(val)
             except KeyError:
@@ -64,7 +66,7 @@ def run_inference(task, model_path, gpu_list, chunks, chunk_idx, output_file):
     method = INFERENCE_METHOD_MAP.get(task["name"], "default")
     
     cmd = [
-        "python", "-m", "llava.eval.model_unified",  # 根据实际文件名调整
+        "python", "-m", "llava.eval.model_unified",
         method,
         "--model-path", str(model_path),
         "--model-base", str(BASE_MODEL_PATH),
@@ -89,7 +91,52 @@ def run_inference(task, model_path, gpu_list, chunks, chunk_idx, output_file):
     
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = str(gpu_list[chunk_idx])
+    
+    # 使用 run 但会在并行版本中被调用
     subprocess.run(cmd, env=env, check=True)
+
+def run_inference_parallel(task, model_path, gpu_list, chunks, result_dir):
+    """并行运行所有chunk的推理"""
+    
+    # 使用线程锁来保护打印输出
+    print_lock = threading.Lock()
+    failed_chunks = []
+    
+    def run_chunk(chunk_idx):
+        """在单独线程中运行单个chunk"""
+        output_file = result_dir / f"{chunks}_{chunk_idx}.jsonl"
+        try:
+            run_inference(task, model_path, gpu_list, chunks, chunk_idx, output_file)
+            with print_lock:
+                print(f"  ✅ Chunk {chunk_idx} completed on GPU {gpu_list[chunk_idx]}")
+            return True
+        except Exception as e:
+            with print_lock:
+                print(f"  ❌ Chunk {chunk_idx} failed on GPU {gpu_list[chunk_idx]}: {e}")
+            return False
+    
+    # 使用线程池并行执行
+    with concurrent.futures.ThreadPoolExecutor(max_workers=chunks) as executor:
+        # 提交所有任务
+        future_to_chunk = {
+            executor.submit(run_chunk, idx): idx 
+            for idx in range(chunks)
+        }
+        
+        # 等待所有任务完成并收集结果
+        for future in concurrent.futures.as_completed(future_to_chunk):
+            chunk_idx = future_to_chunk[future]
+            try:
+                success = future.result()
+                if not success:
+                    failed_chunks.append(chunk_idx)
+            except Exception as e:
+                print(f"  ❌ Chunk {chunk_idx} generated an exception: {e}")
+                failed_chunks.append(chunk_idx)
+    
+    # 如果有失败的chunk，抛出异常
+    if failed_chunks:
+        raise RuntimeError(f"Failed chunks: {failed_chunks}")
 
 def run_evaluation(task, result_file, output_dir):
     """使用统一评估入口执行评估"""
@@ -100,46 +147,40 @@ def run_evaluation(task, result_file, output_dir):
     if eval_task is None:
         raise ValueError(f"No evaluation task mapping for {task['name']}")
 
+    # 基础命令 - 只添加通用参数
     cmd = [
-        "python", "-m", "llava.eval.eval_unified",  # 根据实际文件名调整
+        "python", "-m", "llava.eval.eval_unified",
         eval_task,
-        "--result-file", str(result_file),
-        "--output-dir", str(output_dir)
     ]
+    
+    # 根据任务类型添加不同的通用参数
+    if eval_task == "gqa":
+        # GQA 不使用 --result-file 和 --output-dir
+        pass
+    else:
+        # 其他任务使用通用参数
+        cmd.extend([
+            "--result-file", str(result_file),
+            "--output-dir", str(output_dir)
+        ])
     
     # 添加任务特定评估参数
     if eval_config.get("eval_args"):
-        # 注意：这里需要将 result_file 和 output_dir 作为额外变量传入
+        task_copy = task.copy()
+        task_copy.pop('output_dir', None)
+        task_copy.pop('result_file', None)
+        
         eval_args = format_args(
             eval_config["eval_args"],
             result_file=str(result_file),
             output_dir=str(output_dir),
-            **task
+            **task_copy
         )
         cmd.extend(eval_args)
     
     cmd = [str(item) for item in cmd]
+    print(f"Evaluation command: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
-
-# 其余函数（run_conversion、main）基本保持不变，但也要确保路径转换
-def run_conversion(task, result_file, output_dir):
-    eval_config = task.get("eval", {})
-    if not eval_config.get("needs_conversion", False):
-        return
-    
-    convert_cmd = ["python", eval_config["conversion_script"]]
-    task_copy = task.copy()
-    task_copy.pop('output_dir', None)
-    task_copy.pop('result_file', None)
-    convert_args = format_args(
-        eval_config["conversion_args"],
-        result_file=str(result_file),
-        output_dir=str(output_dir),
-        **task_copy
-    )
-    convert_cmd.extend(convert_args)
-    convert_cmd = [str(item) for item in convert_cmd]
-    subprocess.run(convert_cmd, check=True)
 
 def main():
     parser = argparse.ArgumentParser(description="Run inference and evaluation for a single task")
@@ -148,7 +189,9 @@ def main():
     parser.add_argument("--model-path", type=str, required=True, help="Path to model checkpoint")
     parser.add_argument("--gpus", type=str, default="0", help="GPUs to use (e.g., 0,1,2)")
     parser.add_argument("--stage", type=str, default="MoELoRA", help="Stage name for results folder")
-    parser.add_argument("--method", type=str, default="default", choices=["default", "answer", "scienceqa"], help="Inference method to use")
+    parser.add_argument("--method", type=str, default="default", 
+                        choices=["default", "answer", "scienceqa"], 
+                        help="Inference method to use")
     
     args = parser.parse_args()
 
@@ -176,10 +219,8 @@ def main():
     result_dir.mkdir(parents=True, exist_ok=True)
 
     # 并行推理
-    print("Running inference...")
-    for idx in range(chunks):
-        output_file = result_dir / f"{chunks}_{idx}.jsonl"
-        run_inference(task, args.model_path, gpu_list, chunks, idx, output_file)
+    print("Running inference in parallel...")
+    run_inference_parallel(task, args.model_path, gpu_list, chunks, result_dir)
 
     # 合并结果
     print("\nMerging results...")
@@ -187,11 +228,11 @@ def main():
     with open(merged_file, "w") as outfile:
         for idx in range(chunks):
             chunk_file = result_dir / f"{chunks}_{idx}.jsonl"
-            with open(chunk_file) as infile:
-                outfile.write(infile.read())
-
-    # 格式转换（如果需要）
-    run_conversion(task, str(merged_file), str(result_dir))
+            if chunk_file.exists():
+                with open(chunk_file) as infile:
+                    outfile.write(infile.read())
+            else:
+                print(f"Warning: {chunk_file} not found")
 
     # 运行评估
     print("\n📈 Running evaluation...")
@@ -199,7 +240,6 @@ def main():
     
     print(f"\n✅ {task['name']} evaluation completed!")
     print(f"📁 Results saved in: {result_dir}")
-
 
 if __name__ == "__main__":
     main()

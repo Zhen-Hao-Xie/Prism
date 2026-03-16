@@ -279,8 +279,6 @@ class LlavaMetaForCausalLM(ABC):
             sim = text_sim # (image_sim + text_sim) / 2 # 改成sim = text_sim
             #added by me
             predicted_task_id=torch.argmax(sim).item()  # int, e.g., 2
-
-            print(f">>>>>>>>the predicted task id is {predicted_task_id} with multimedia routing.")
             _set_predicted_task_id_all_lora(predicted_task_id)
         # TODO: image start / end is not implemented here to support pretraining.
         if getattr(self.config, 'tune_mm_mlp_adapter', False) and getattr(self.config, 'mm_use_im_start_end', False):

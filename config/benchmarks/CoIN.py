@@ -81,7 +81,11 @@ COIN_TASKS = [
                 "--tier", "testdev_balanced",
                 "--path", "{output_dir}",
                 "--question-dir", "{eval_annotation_path}",
-                "--output-dir", "{output_dir}"
+                "--questions", "testdev_balanced_questions.json",
+                "--predictions", "testdev_balanced_predictions.json",
+                "--scenes", "testdev_balanced_sceneGraphs.json",
+                "--raw-result-file", "{result_file}",  # 改用 raw-result-file
+                # 注意：不要加 --output-dir，因为已经在基础命令中有了
             ],
             "needs_conversion": True,
         }

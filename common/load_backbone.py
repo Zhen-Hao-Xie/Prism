@@ -3,9 +3,8 @@ import transformers
 from typing import Dict
 
 from .utils import smart_tokenizer_and_embedding_resize
-from llava.model import LlavaLlamaForCausalLM, LlavaMPTForCausalLM
 from llava import conversation as conversation_lib
-
+from llava.model import LlavaLlamaForCausalLM
 
 def setup_quantization(training_args, compute_dtype) -> Dict:
     bnb_args = {}
@@ -31,16 +30,7 @@ def setup_quantization(training_args, compute_dtype) -> Dict:
 
 def load_pretrained_model(model_name_or_path, training_args, bnb_args, has_vision=False):
     if has_vision:
-        if 'mpt' in model_name_or_path:
-            config = transformers.AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)
-            config.attn_config['attn_impl'] = training_args.mpt_attn_impl
-            model = LlavaMPTForCausalLM.from_pretrained(
-                model_name_or_path,
-                config=config,
-                cache_dir=training_args.cache_dir,
-                **bnb_args
-            )
-        else:
+        if 'llava' in model_name_or_path:
             model = LlavaLlamaForCausalLM.from_pretrained(
                 model_name_or_path,
                 cache_dir=training_args.cache_dir,
@@ -57,21 +47,13 @@ def load_pretrained_model(model_name_or_path, training_args, bnb_args, has_visio
 
 
 def load_tokenizer(model_name_or_path, training_args):
-    if 'mpt' in model_name_or_path:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            model_name_or_path,
-            cache_dir=training_args.cache_dir,
-            model_max_length=training_args.model_max_length,
-            padding_side="right"
-        )
-    else:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            model_name_or_path,
-            cache_dir=training_args.cache_dir,
-            model_max_length=training_args.model_max_length,
-            padding_side="right",
-            use_fast=True,
-        )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        model_name_or_path,
+        cache_dir=training_args.cache_dir,
+        model_max_length=training_args.model_max_length,
+        padding_side="right",
+        use_fast=True,
+    )
     return tokenizer
 
 

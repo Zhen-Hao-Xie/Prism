@@ -25,18 +25,11 @@ def train():
 
     model_args, data_args, training_args = load_config()
     local_rank = training_args.local_rank
-    model, tokenizer, data_args = load_model_for_train(
-        model_args, data_args, training_args
-    )
+    model, tokenizer, data_args = load_model_for_train(model_args, data_args, training_args)
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
 
-    trainer = LLaVATrainer(
-        model=model,
-        tokenizer=tokenizer,
-        args=training_args,
-        **data_module
-    )
+    trainer = LLaVATrainer(model=model,tokenizer=tokenizer,args=training_args,**data_module)
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         rank0_print(f"Resuming from checkpoint in {training_args.output_dir}")
