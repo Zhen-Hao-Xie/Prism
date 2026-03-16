@@ -16,7 +16,7 @@ from .load_backbone import (
 from .peft_utils import create_lora_config, apply_lora
 from .load_checkpoint import load_from_checkpoint
 from .load_config import ModelArguments, DataArguments, TrainingArguments
-from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from config.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 import shutil
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 import torch

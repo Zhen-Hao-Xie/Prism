@@ -125,8 +125,7 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num-beams", dest="num_beams", type=int, default=1)
-    parser.add_argument("--max-new-tokens",
-                        dest="max_new_tokens", type=int, default=128)
+    parser.add_argument("--max-new-tokens",dest="max_new_tokens", type=int, default=128)
 
 
 def build_registry() -> ModelMethodRegistry:

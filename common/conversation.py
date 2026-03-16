@@ -1,7 +1,6 @@
 import dataclasses
 from enum import auto, Enum
-from typing import List, Tuple
-
+from typing import List
 
 class SeparatorStyle(Enum):
     """Different separator style."""

@@ -15,8 +15,6 @@ COIN_TASKS = [
         "previous_task": None,
         # 评估相关配置
         "eval": {
-            "inference_module": "llava.eval.model_science_qa",
-            "eval_module": "llava.eval.eval_science_qa",
             "inference_args": [
                 "--mm-text-select-layer", "-1",
                 "--single-pred-prompt"
@@ -41,8 +39,6 @@ COIN_TASKS = [
         "batch_size": 2,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task0_llava_lora",
         "eval": {
-            "inference_module": "llava.eval.model_others",
-            "eval_module": "llava.eval.eval_textvqa",
             "inference_args": [],
             "eval_args": [
                 "--annotation-file", "{eval_annotation_path}",
@@ -61,8 +57,6 @@ COIN_TASKS = [
         "batch_size": 8,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task1_llava_lora",
         "eval": {
-            "inference_module": "llava.eval.model_others",
-            "eval_module": "llava.eval.eval_imagenet",
             "inference_args": [],
             "eval_args": [
                 "--test-file", "{test_data_path}",
@@ -82,8 +76,6 @@ COIN_TASKS = [
         "batch_size": 8,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task2_llava_lora",
         "eval": {
-            "inference_module": "llava.eval.model_others",
-            "eval_module": "llava.eval.eval_gqa",
             "inference_args": [],
             "eval_args": [
                 "--tier", "testdev_balanced",
@@ -92,11 +84,6 @@ COIN_TASKS = [
                 "--output-dir", "{output_dir}"
             ],
             "needs_conversion": True,
-            "conversion_script": "./tools/convert_gqa_for_eval.py",
-            "conversion_args": [
-                "--src", "{result_file}",
-                "--dst", "{output_dir}/testdev_balanced_predictions.json"
-            ],
         }
     },
     {
@@ -109,8 +96,6 @@ COIN_TASKS = [
         "batch_size": 8,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task3_llava_lora",
         "eval": {
-            "inference_module": "llava.eval.model_others",
-            "eval_module": "llava.eval.eval_vizwiz",
             "inference_args": [],
             "eval_args": [
                 "--result-file", "{result_file}",
@@ -129,8 +114,6 @@ COIN_TASKS = [
         "batch_size": 8,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task4_llava_lora",
         "eval": {
-            "inference_module": "llava.eval.model_others",
-            "eval_module": "llava.eval.eval_grounding",
             "inference_args": [],
             "eval_args": [
                 "--test-file", "{test_data_path}",
@@ -150,8 +133,6 @@ COIN_TASKS = [
         "batch_size": 8,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task5_llava_lora",
         "eval": {
-            "inference_module": "llava.eval.model_others",
-            "eval_module": "llava.eval.eval_vqav2",
             "inference_args": [],
             "eval_args": [
                 "--result-file", "{result_file}",
@@ -171,8 +152,6 @@ COIN_TASKS = [
         "batch_size": 8,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task6_llava_lora",
         "eval": {
-            "inference_module": "llava.eval.model_others",
-            "eval_module": "llava.eval.eval_ocrvqa",
             "inference_args": [],
             "eval_args": [
                 "--annotation-file", "{eval_annotation_path}",

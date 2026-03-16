@@ -5,14 +5,15 @@ import torch
 import torch.distributed as dist
 
 from common.data_manager import ImageFinder
-from llava.constants import (
+from config.constants import (
     DEFAULT_IMAGE_TOKEN,
     DEFAULT_IM_END_TOKEN,
     DEFAULT_IM_START_TOKEN,
     IMAGE_TOKEN_INDEX,
 )
-from llava.conversation import SeparatorStyle, conv_templates
-from llava.mm_utils import KeywordsStoppingCriteria, process_images, tokenizer_image_token
+from common.conversation import SeparatorStyle, conv_templates
+from common.data_processor import process_images, tokenizer_image_token
+from common.generation_utils import KeywordsStoppingCriteria
 from llava.utils import disable_torch_init
 
 from .inference_engine import (

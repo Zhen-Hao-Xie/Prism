@@ -10,7 +10,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from common.load_model import load_model_for_inference
-from llava.mm_utils import get_model_name_from_path
+from common.data_processor import get_model_name_from_path
 
 from common.data_manager import InferenceDataset
 
