@@ -6,7 +6,7 @@ logs/
 */logs/
 checkpoints/
 */checkpoints/
-
+**/results/
 
 *.whl
 *.WHL
