@@ -15,9 +15,9 @@ from torch.utils.data import Dataset, Sampler
 from tqdm import tqdm
 
 from config.constants import IGNORE_INDEX
-from llava import conversation as conversation_lib
+from common.conversation import Conversation as conversation_lib
 from common.file_manager import load_questions
-from common.utils import get_chunk
+from common.data_processor import get_chunk
 from common.data_processor import expand2square, tokenizer_image_token, preprocess_multimodal, preprocess
 
 

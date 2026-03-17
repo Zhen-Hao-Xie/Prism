@@ -2,8 +2,8 @@ import argparse
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List
 
-from llava.eval.inference_engine import InferenceEngine
-from llava.eval.task_adapters import DefaultTaskAdapter, ScienceQATaskAdapter
+from backbone.llava.eval.inference_engine import InferenceEngine
+from backbone.llava.eval.task_adapters import DefaultTaskAdapter, ScienceQATaskAdapter
 
 
 class BaseModelMethod(ABC):

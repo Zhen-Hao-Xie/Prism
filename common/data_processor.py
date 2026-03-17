@@ -1,17 +1,16 @@
 """
 数据处理函数模块：包含图像处理、tokenization、对话预处理等功能
 """
-
 import copy
 import base64
 from io import BytesIO
-from typing import Dict, List, Sequence, Optional
+from typing import Dict,Sequence
 import torch
 from PIL import Image
 import transformers
 from config.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from llava import conversation as conversation_lib
-
+from common.conversation import Conversation as conversation_lib
+import math
 
 def expand2square(pil_img, background_color):
     """将图片扩展为正方形，用背景色填充"""
@@ -81,6 +80,31 @@ def get_model_name_from_path(model_path):
     else:
         return model_paths[-1]
 
+
+def smart_tokenizer_and_embedding_resize(
+    special_tokens_dict: Dict,
+    tokenizer: transformers.PreTrainedTokenizer,
+    model: transformers.PreTrainedModel,
+):
+    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
+    model.resize_token_embeddings(len(tokenizer))
+    if num_new_tokens > 0:
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        input_embeddings[-num_new_tokens:] = input_embeddings_avg
+        output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+def split_list(lst, n):
+    """将列表均匀分成 n 份"""
+    chunk_size = math.ceil(len(lst) / n)
+    return [lst[i:i+chunk_size] for i in range(0, len(lst), chunk_size)]
+
+def get_chunk(lst, n, k):
+    """获取第 k 份数据"""
+    chunks = split_list(lst, n)
+    return chunks[k]
 
 # ---------- 以下为对话预处理函数 ----------
 

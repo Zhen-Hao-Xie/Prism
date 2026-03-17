@@ -14,7 +14,7 @@ from config.constants import (
 from common.conversation import SeparatorStyle, conv_templates
 from common.data_processor import process_images, tokenizer_image_token
 from common.generation_utils import KeywordsStoppingCriteria
-from llava.utils import disable_torch_init
+from common.logging import disable_torch_init
 
 from .inference_engine import (
     BaseInferenceAdapter,

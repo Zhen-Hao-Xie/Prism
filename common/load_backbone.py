@@ -2,9 +2,9 @@ import torch
 import transformers
 from typing import Dict
 
-from .utils import smart_tokenizer_and_embedding_resize
-from llava import conversation as conversation_lib
-from llava.model import LlavaLlamaForCausalLM
+from .data_processor import smart_tokenizer_and_embedding_resize
+from .conversation import Conversation as conversation_lib
+from backbone.llava.model import LlavaLlamaForCausalLM
 
 def setup_quantization(training_args, compute_dtype) -> Dict:
     bnb_args = {}

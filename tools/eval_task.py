@@ -66,7 +66,7 @@ def run_inference(task, model_path, gpu_list, chunks, chunk_idx, output_file):
     method = INFERENCE_METHOD_MAP.get(task["name"], "default")
     
     cmd = [
-        "python", "-m", "llava.eval.model_unified",
+        "python", "-m", "backbone.llava.eval.model_unified",
         method,
         "--model-path", str(model_path),
         "--model-base", str(BASE_MODEL_PATH),
@@ -149,7 +149,7 @@ def run_evaluation(task, result_file, output_dir):
 
     # 基础命令 - 只添加通用参数
     cmd = [
-        "python", "-m", "llava.eval.eval_unified",
+        "python", "-m", "backbone.llava.eval.eval_unified",
         eval_task,
     ]
     

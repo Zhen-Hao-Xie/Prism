@@ -12,7 +12,7 @@ from common import (
     save_model,
     make_supervised_data_module,
 )
-from llava.train.llava_trainer import LLaVATrainer
+from backbone.llava.train.llava_trainer import LLaVATrainer
 
 local_rank = None
 

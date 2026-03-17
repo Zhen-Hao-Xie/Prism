@@ -1,9 +1,6 @@
 import torch
 from typing import List
 import sys
-
-# HiDe 路径（请根据实际情况修改）
-sys.path.append('/mnt/haiyangguo/mywork/CL-MLLM/LLaVA-HiDe')
 from PEFT.peft import HiDeMOELoraConfig, TaskType, get_peft_model
 
 
