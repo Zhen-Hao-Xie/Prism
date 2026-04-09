@@ -6,11 +6,11 @@ COIN_TASKS = [
     {
         "cur_task": 0,
         "name": "ScienceQA",
-        "train_data_path": f"{INSTRUCTION_DIR}/ScienceQA/train.json",
-        "test_data_path": f"{INSTRUCTION_DIR}/ScienceQA/test.json",
+        "train_data_path": f"{INSTRUCTION_DIR}/ScienceQA/train_sub.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/ScienceQA/test_sub.json",
         "eval_annotation_path": f"{INSTRUCTION_DIR}/ScienceQA",
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task0_llava_lora",
-        "batch_size": 1,
+        "batch_size": 48,
         "pretrain_mm_mlp_adapter": f"{PRETRAIN_MM_PROJECTOR}",
         "previous_task": None,
         # 评估相关配置
@@ -32,11 +32,11 @@ COIN_TASKS = [
     {
         "cur_task": 1,
         "name": "TextVQA",
-        "train_data_path": f"{INSTRUCTION_DIR}/TextVQA/train.json",
-        "test_data_path": f"{INSTRUCTION_DIR}/TextVQA/test.json",
+        "train_data_path": f"{INSTRUCTION_DIR}/TextVQA/train_sub.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/TextVQA/test_sub.json",
         "eval_annotation_path": f"{INSTRUCTION_DIR}/TextVQA/valid.json",
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task1_llava_lora",
-        "batch_size": 1,
+        "batch_size": 48,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task0_llava_lora",
         "eval": {
             "inference_args": [],
@@ -51,10 +51,10 @@ COIN_TASKS = [
     {
         "cur_task": 2,
         "name": "ImageNet",
-        "train_data_path": f"{INSTRUCTION_DIR}/ImageNet/train.json",
-        "test_data_path": f"{INSTRUCTION_DIR}/ImageNet/test.json",
+        "train_data_path": f"{INSTRUCTION_DIR}/ImageNet/train_sub.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/ImageNet/test_sub.json",
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task2_llava_lora",
-        "batch_size": 16,
+        "batch_size": 48,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task1_llava_lora",
         "eval": {
             "inference_args": [],
@@ -69,11 +69,11 @@ COIN_TASKS = [
     {
         "cur_task": 3,
         "name": "GQA",
-        "train_data_path": f"{INSTRUCTION_DIR}/GQA/train.json",
-        "test_data_path": f"{INSTRUCTION_DIR}/GQA/test.json",
+        "train_data_path": f"{INSTRUCTION_DIR}/GQA/train_sub.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/GQA/test_sub.json",
         "eval_annotation_path": f"{INSTRUCTION_DIR}/GQA",
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task3_llava_lora",
-        "batch_size": 16,
+        "batch_size": 48,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task2_llava_lora",
         "eval": {
             "inference_args": [],
@@ -93,11 +93,11 @@ COIN_TASKS = [
     {
         "cur_task": 4,
         "name": "VizWiz",
-        "train_data_path": f"{INSTRUCTION_DIR}/VizWiz/train.json",
-        "test_data_path": f"{INSTRUCTION_DIR}/VizWiz/val.json",
-        "eval_annotation_path": f"{INSTRUCTION_DIR}/VizWiz/val.json",
+        "train_data_path": f"{INSTRUCTION_DIR}/VizWiz/train_sub.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/VizWiz/val_sub.json",
+        "eval_annotation_path": f"{INSTRUCTION_DIR}/VizWiz/val_sub.json",
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task4_llava_lora",
-        "batch_size": 16,
+        "batch_size": 48,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task3_llava_lora",
         "eval": {
             "inference_args": [],
@@ -112,10 +112,10 @@ COIN_TASKS = [
     {
         "cur_task": 5,
         "name": "Grounding",
-        "train_data_path": f"{INSTRUCTION_DIR}/Grounding/train.json",
-        "test_data_path": f"{INSTRUCTION_DIR}/Grounding/test.json",
+        "train_data_path": f"{INSTRUCTION_DIR}/Grounding/train_sub.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/Grounding/test_sub.json",
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task5_llava_lora",
-        "batch_size": 16,
+        "batch_size": 48,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task4_llava_lora",
         "eval": {
             "inference_args": [],
@@ -130,11 +130,11 @@ COIN_TASKS = [
     {
         "cur_task": 6,
         "name": "VQAv2",
-        "train_data_path": f"{INSTRUCTION_DIR}/VQAv2/train.json",
-        "test_data_path": f"{INSTRUCTION_DIR}/VQAv2/val.json",
-        "eval_annotation_path": f"{INSTRUCTION_DIR}/VQAv2/val.json",
+        "train_data_path": f"{INSTRUCTION_DIR}/VQAv2/train_sub.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/VQAv2/val_sub.json",
+        "eval_annotation_path": f"{INSTRUCTION_DIR}/VQAv2/val_sub.json",
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task6_llava_lora",
-        "batch_size": 16,
+        "batch_size": 48,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task5_llava_lora",
         "eval": {
             "inference_args": [],
@@ -149,11 +149,11 @@ COIN_TASKS = [
     {
         "cur_task": 7,
         "name": "OCRVQA",
-        "train_data_path": f"{INSTRUCTION_DIR}/OCRVQA/train.json",
-        "test_data_path": f"{INSTRUCTION_DIR}/OCRVQA/test.json",
-        "eval_annotation_path": f"{INSTRUCTION_DIR}/OCRVQA/test.json",
+        "train_data_path": f"{INSTRUCTION_DIR}/OCRVQA/train_sub.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/OCRVQA/test_sub.json",
+        "eval_annotation_path": f"{INSTRUCTION_DIR}/OCRVQA/test_sub.json",
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task7_llava_lora",
-        "batch_size": 16,
+        "batch_size": 48,
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task6_llava_lora",
         "eval": {
             "inference_args": [],

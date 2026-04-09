@@ -6,7 +6,7 @@ export PYTHONPATH="$(cd "$(dirname "$0")/.." && pwd):$PYTHONPATH"
 
 # 默认值
 BENCHMARK="coin"
-GPUS="0,1"
+GPUS="0"
 TASKS=()
 
 # 解析参数

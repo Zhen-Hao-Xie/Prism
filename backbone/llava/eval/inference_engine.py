@@ -109,7 +109,7 @@ def default_generate(model: Any, input_ids: torch.Tensor, images: Optional[torch
 
     with torch.inference_mode():
         return model.generate(
-            input_ids,
+            input_ids=input_ids,  # 使用关键字参数
             images=images,
             **generate_kwargs,
         )

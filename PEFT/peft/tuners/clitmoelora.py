@@ -394,6 +394,7 @@ class HiDeMOELoraLinear(nn.Linear, HiDeMOELoraLayer):
                 # 训练阶段：使用 cur_task（不变）
                 task_id = self.cur_task
             else:
+                #print(f"🔍 [Layer {self.layer}] 使用 expert_{self.predicted_task_id}")
                 if self.predicted_task_id == -1:
                     assert(0), f"layer {self.layer} missing predicted_task_id"
                 task_id = self.predicted_task_id

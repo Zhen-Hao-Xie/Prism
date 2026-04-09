@@ -9,7 +9,7 @@ import sys
 def check_hide_state(checkpoint_path):
     """检查 hide_state.pt 文件"""
     
-    hide_path = os.path.join(checkpoint_path, 'hide_state.pt')
+    hide_path = os.path.join(checkpoint_path, 'non_lora_trainables.bin')
     
     if not os.path.exists(hide_path):
         print(f"❌ hide_state.pt 不存在：{hide_path}")
@@ -81,7 +81,7 @@ def check_hide_state(checkpoint_path):
 
 if __name__ == '__main__':
     # 默认路径
-    default_path = '/root/autodl-tmp/tjt/PyMCIT/checkpoints/CoIN/Task1_llava_lora'
+    default_path = '/root/autodl-tmp/tjt/PyMCIT/checkpoints/CoIN/Task0_llava_lora'
     
     # 支持命令行参数
     if len(sys.argv) > 1:

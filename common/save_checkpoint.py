@@ -131,6 +131,7 @@ def _save_cl_extra_state(model, output_dir: str):
     if not saved:
         print(f"⚠️  CL 特定状态未保存（未找到 integration）")
     
+    
 # common/save_checkpoint.py
 def save_model(model, training_args, trainer=None, save_extra_state: bool = True):
     """统一的模型保存函数"""

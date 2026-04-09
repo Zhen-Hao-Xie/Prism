@@ -219,7 +219,6 @@ def load_model_for_inference(
                     model = CLModel(model, integration)
                     print(f"✅ 推理模型已包装为 CLModel | 方法：{method}")
                     
-                    # ========== 关键修复：使用 load_from_checkpoint 统一加载 ==========
                     if os.path.exists(model_path):
                         print(f"📦 从 checkpoint 加载模型状态...")
                         model = load_from_checkpoint(
@@ -236,19 +235,9 @@ def load_model_for_inference(
                         success = integration.load_extra_state(model_path, model=model)
                         if success:
                             print(f"✅ HiDe 状态已加载 | anchors 可用：{hasattr(model, 'image_anchors')}")
-                    
-                    # 设置 predicted_task_id
-                    predicted_task_id = getattr(pseudo_args, 'cur_task', 0)
-                    count = 0
-                    for module in model.modules():
-                        if module.__class__.__name__ == 'HiDeMOELoraLinear':
-                            if hasattr(module, 'predicted_task_id'):
-                                module.predicted_task_id = predicted_task_id
-                                count += 1
-                    if count > 0:
-                        print(f"✅ predicted_task_id={predicted_task_id} 已传播到 {count} 个专家层")
             else:
                 # 非 CL 方法：手动加载（原有逻辑）
+                assert(0)
                 print('Loading additional LLaVA weights...')
                 if os.path.exists(os.path.join(model_path, 'non_lora_trainables.bin')):
                     non_lora_trainables = torch.load(os.path.join(model_path, 'non_lora_trainables.bin'), map_location='cpu')
@@ -298,5 +287,6 @@ def load_model_for_inference(
         context_len = model.config.max_sequence_length
     else:
         context_len = 2048
+
 
     return tokenizer, model, image_processor, context_len

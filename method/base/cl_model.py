@@ -294,3 +294,32 @@ class CLModel(nn.Module):
         if hasattr(self._integration, 'hook_manager'):
             self._integration.hook_manager.remove_all()
         print("✅ CLModel 资源已清理")
+
+    # method/base/cl_model.py
+    def pre_generate_hook(self, model, input_ids, images, context) -> bool:
+        """
+        在 generate 之前的钩子，子类可以重写
+        
+        Returns:
+            bool: True 表示已处理，False 表示未处理
+        """
+        return False
+    
+    def generate(self, *args, **kwargs):
+
+        """重写 generate，调用 integration 的 pre_generate_hook"""
+        
+        # ========== 调用 pre_generate_hook ==========
+        if hasattr(self, '_integration'):
+            input_ids = kwargs.get('input_ids', args[0] if args else None)
+            images = kwargs.get('images', None)
+            context = CLContext(task_id=getattr(self, 'current_task_id', 0))
+            
+            if hasattr(self._integration, 'pre_generate_hook'):
+                self._integration.pre_generate_hook(self, input_ids, images, context)
+        # ===========================================
+        
+        if hasattr(self, '_base_model'):
+            return self._base_model.generate(*args, **kwargs)
+        else:
+            return super().generate(*args, **kwargs)
