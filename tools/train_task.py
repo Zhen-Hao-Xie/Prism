@@ -29,7 +29,7 @@ def build_command(task, gpus="0,1", port=29601, debug=False):
         "deepspeed",
         f"--include=localhost:{gpus}",
         f"--master_port={port}",
-        "llava/train/train_mem.py",
+        "backbone/llava/train/train_mem.py",
         "--deepspeed", DEEPSPEED_CONFIG,
         "--lora_enable", "True",
         "--lora_r", "64",
@@ -53,8 +53,8 @@ def build_command(task, gpus="0,1", port=29601, debug=False):
         "--bf16", "True",
         "--output_dir", task["output_dir"],
         "--num_train_epochs", "1",
-        "--per_device_train_batch_size", str(4 if debug else task["batch_size"]),
-        "--per_device_eval_batch_size", str(4 if debug else task["batch_size"]),
+        "--per_device_train_batch_size", str(1 if debug else task["batch_size"]),
+        "--per_device_eval_batch_size", str(1 if debug else task["batch_size"]),
         "--gradient_accumulation_steps", "1",
         "--evaluation_strategy", "no",
         "--save_strategy", "epoch",
@@ -68,7 +68,8 @@ def build_command(task, gpus="0,1", port=29601, debug=False):
         "--gradient_checkpointing", "True",
         "--dataloader_num_workers", "4",
         "--lazy_preprocess", "True",
-        "--report_to", "none"
+        "--report_to", "none",
+        "--method","hide_llava"
     ]
 
     # 如果任务指定了pretrain_mm_mlp_adapter，使用任务特定的

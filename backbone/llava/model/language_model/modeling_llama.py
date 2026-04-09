@@ -497,7 +497,7 @@ class LlamaModel(LlamaPreTrainedModel):
         self.layers = nn.ModuleList([LlamaDecoderLayer(config) for _ in range(config.num_hidden_layers)])
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
-        self.gradient_checkpointing = False
+        self.gradient_checkpointing = True
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -596,7 +596,7 @@ class LlamaModel(LlamaPreTrainedModel):
         )
 
         hidden_states = inputs_embeds
-        self.gradient_checkpointing=False
+        self.gradient_checkpointing=True
         if self.gradient_checkpointing and self.training:
             if use_cache:
                 logger.warning_once(

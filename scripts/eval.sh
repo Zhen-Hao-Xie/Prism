@@ -12,7 +12,7 @@ BENCHMARK="coin"
 GPUS="0,1"
 MODEL_PATH=""  # 如果指定，则使用这个路径；否则使用默认的 Task7_llava_lora
 CHECKPOINT_SUFFIX="_llava_lora"  # checkpoint 后缀
-DEFAULT_TASK="0"  # 默认使用 Task0 的checkpoint
+DEFAULT_TASK="1"  # 默认使用 Task0 的checkpoint
 STAGE="MoELoRA"
 TASKS=()  # 要评估的任务列表
 

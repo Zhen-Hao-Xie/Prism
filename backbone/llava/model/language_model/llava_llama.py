@@ -18,10 +18,9 @@ import os
 import torch
 import torch.nn as nn
 
-#from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
 from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
-
-from .modeling_llama import LlamaModel, LlamaForCausalLM
+# from transformers import AutoConfig, AutoModelForCausalLM, LlamaConfig, LlamaModel, LlamaForCausalLM
+# from .modeling_llama import LlamaModel, LlamaForCausalLM
 
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
@@ -53,65 +52,11 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         # Initialize weights and apply final processing
         self.post_init()
         self.training = False
-        self.cur_task = 0
-        self.expert_num = 8
-        self.other_total_prob = 0.001
-        self.rank_based_ratio = torch.tensor([8.5, 1.0]) 
-        self.threshold=0.8
-        self.temparature=16
-        self.temparature_2=12
-        self.normalized_ratio =  self.rank_based_ratio /  self.rank_based_ratio.sum()
-        self.other_total_prob=0.003
-        self.remaining_prob=1-self.other_total_prob
 
-        self.image_anchors = nn.ParameterList(
-            [nn.Parameter(0.1 * torch.randn(1, 768)) for _ in range(10)]
-        )
-
-        self.text_anchors = nn.ParameterList(
-            [nn.Parameter(0.1 * torch.randn(1, 768)) for _ in range(10)]
-        )
-
-        self.image_boundary = nn.ParameterList(
-            [nn.Parameter(torch.ones(1, dtype=torch.bfloat16)) for _ in range(10)]
-            )
-        self.text_boundary = nn.ParameterList(
-            [nn.Parameter(torch.ones(1, dtype=torch.bfloat16)) for _ in range(10)]
-            )
-
-
-    
 
     def set_cur_task(self, cur_task, expert_num):
         self.cur_task = cur_task
         self.expert_num = expert_num
-
-    def set_prototype_params_for_save(self):
-        for name, param in self.image_boundary.named_parameters():
-            param.requires_grad = True
-        
-        for name, param in self.text_boundary.named_parameters():
-            param.requires_grad = True
-
-        for name, param in self.image_anchors.named_parameters():
-            param.requires_grad = True
-        
-        for name, param in self.text_anchors.named_parameters():
-            param.requires_grad = True
-        
-    def set_boundary_for_save(self):
-        for name, param in self.image_boundary.named_parameters():
-            param.requires_grad = True
-        
-        for name, param in self.text_boundary.named_parameters():
-            param.requires_grad = True
-
-        for name, param in self.image_anchors.named_parameters():
-            param.requires_grad = True
-        
-        for name, param in self.text_anchors.named_parameters():
-            param.requires_grad = True
-
 
     def get_model(self):
         return self.model

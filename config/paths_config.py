@@ -5,19 +5,19 @@ from pathlib import Path
 PROJECT_ROOT = str(Path(__file__).parent.parent.absolute())
 
 # 基础模型路径
-BASE_MODEL_PATH = "/data2/mnt2/zhoudw/zh/LLaVa"
+BASE_MODEL_PATH = "/root/autodl-tmp/LLaVa"
 
 # CLIP模型路径
-CLIP_PATH = "/data2/mnt2/zhoudw/zh/CLIP"
+CLIP_PATH = "/root/autodl-tmp/CLIP"
 
 # MCIT数据集根目录
-MCIT_ROOT = "/data2/mnt2/zhoudw/zh/MCIT"
+MCIT_ROOT = "/root/autodl-tmp/MCIT"
 
 # 预训练的mm_projector
 PRETRAIN_MM_PROJECTOR = f"{BASE_MODEL_PATH}/mm_projector.bin"
 
 # 指令文件目录
-INSTRUCTION_DIR = f"{MCIT_ROOT}/instructions/Instructions_Original"
+INSTRUCTION_DIR = f"{MCIT_ROOT}/instructions"
 
 # 图像文件夹
 IMAGE_FOLDER = f"{MCIT_ROOT}/datasets"

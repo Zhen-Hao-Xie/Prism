@@ -46,6 +46,7 @@ class InferenceEngine:
             model_path,
             args.model_base,
             model_name,
+            method=args.clmethod,  # ← 关键：传入 method 参数
             text_tower=getattr(args, "text_tower", None),
         )
         return tokenizer, model, image_processor, model_name

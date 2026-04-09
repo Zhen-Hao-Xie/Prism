@@ -126,6 +126,7 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num-beams", dest="num_beams", type=int, default=1)
     parser.add_argument("--max-new-tokens",dest="max_new_tokens", type=int, default=128)
+    parser.add_argument('--clmethod', type=str, default=None,choices=['base', 'hide_llava', 'sp', 'ranpac'],help='持续学习方法（从 checkpoint 自动检测）')
 
 
 def build_registry() -> ModelMethodRegistry:

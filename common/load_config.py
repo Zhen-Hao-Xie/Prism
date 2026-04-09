@@ -21,6 +21,7 @@ class ModelArguments:
     mm_vision_select_feature: Optional[str] = field(default="patch")
     task_embedding_dim: Optional[int] = field(default=64)
     expert_num: Optional[int] = field(default=None)
+    method: str = field(default="hide_llava", metadata={"help": "CL method name: base/hide_llava"})
 
 @dataclass
 class DataArguments:
@@ -50,6 +51,7 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_bias: str = "none"
     mm_projector_lr: Optional[float] = None
     group_by_modality_length: bool = field(default=False)
+    
 
 def load_config():
     """解析命令行参数，返回三个配置对象"""

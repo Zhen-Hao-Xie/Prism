@@ -9,7 +9,7 @@ import torch
 from PIL import Image
 import transformers
 from config.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from common.conversation import Conversation as conversation_lib
+from . import conversation as conversation_lib
 import math
 
 def expand2square(pil_img, background_color):

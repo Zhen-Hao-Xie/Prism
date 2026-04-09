@@ -133,78 +133,12 @@ class LlavaMetaForCausalLM(ABC):
 
     def prepare_inputs_labels_for_multimodal(self, input_ids, position_ids, attention_mask, past_key_values, labels, images):
         vision_tower = self.get_vision_tower()
-        def _set_predicted_task_id_all_lora(task_id: int):
-            # Set routing id for all HiDe MoE-LoRA linear modules inside this model.
-            for module in self.modules():
-                if module.__class__.__name__ == 'HiDeMOELoraLinear':
-                    module.predicted_task_id = int(task_id)
-            self._last_predicted_task_id = int(task_id)
-
-        # ---- Text-only routing (ScienceQA has many samples without images) ----
-        # In inference, HiDe LoRA-MoE layers require `predicted_task_id` to be set.
-        # For text-only samples we set it during the prefill step (seq_len > 1).
-        # During incremental decoding (seq_len == 1) we reuse the cached id.
-        # Problem still exists  -_- Upd: Now at least the first and the second task can be properly routed and evaluated.
-        # It seems that the predicted answer cannot be properly written to the answer file. upd: solved
-        # TODO: 搞清楚为什么在使用任务5得到模型评估TextVQA的时候，predicted_task_id只有26个不对，但是相较于任务2的模型，acc下降了4%（多了200个不对的）
-        if images is None:
-            try:
-                if not self.training:
-                    if input_ids.shape[1] > 1:
-                        input_pad = np.where(
-                            input_ids.cpu().detach().numpy() != -200,
-                            input_ids.cpu().detach().numpy(),
-                            self.tokenizer.pad_token_id,
-                        )
-                        decoded_inputs = self.tokenizer.batch_decode(input_pad, skip_special_tokens=True)
-                        decoded_hidden_inputs = ['\n'.join(decode_input.split('\n')[1:]) for decode_input in decoded_inputs]
-                        decoded_clip_inputs = [decode_input.split(' ASSISTANT')[0] for decode_input in decoded_hidden_inputs]
-
-                        clip_text_inputs = self.clip_tokenizer(
-                            decoded_clip_inputs,
-                            padding="longest",
-                            max_length=77,
-                            truncation=True,
-                            return_tensors="pt",
-                        )
-                        clip_text_inputs = clip_text_inputs.to(self.device)
-                        text_tower = self.get_text_tower()
-                        text_guide_features = text_tower(clip_text_inputs)
-
-                        text_sim = []
-                        for text_anchor in self.text_anchors:
-                            text_sims = F.cosine_similarity(
-                                text_guide_features.unsqueeze(1).to(self.device),
-                                text_anchor,
-                                dim=2,
-                            )
-                            text_sim.append(text_sims.max())
-                        text_sim = torch.stack(text_sim[:self.expert_num])
-                        predicted_task_id = int(torch.argmax(text_sim).item())
-                        self._last_predicted_task_id = predicted_task_id
-
-                        _set_predicted_task_id_all_lora(predicted_task_id)
-                        print(f"✅ Text-only routing set predicted_task_id = {predicted_task_id}")
-
-                    elif hasattr(self, '_last_predicted_task_id'):
-                        predicted_task_id = int(getattr(self, '_last_predicted_task_id'))
-                        _set_predicted_task_id_all_lora(predicted_task_id)
-                        print(f"✅ Text-only routing reuse predicted_task_id = {predicted_task_id}")
-                        if hasattr(self, 'base_model') and hasattr(self.base_model, 'base_model'):
-                            hidemodel = self.base_model.base_model
-                            if hasattr(hidemodel, 'set_predicted_task_id'):
-                                hidemodel.set_predicted_task_id(predicted_task_id)
-            except Exception as e:
-                fallback_task_id = int(getattr(self, '_last_predicted_task_id', 0))
-                _set_predicted_task_id_all_lora(fallback_task_id)
-                print(f"⚠️ Text-only routing skipped due to: {type(e).__name__}: {e}")
 
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             # ScienceQA case: Enter this branch with no images
             # It's worth noting that some questions in ScienceQA do not have images in fact.
             # Then no predicted task id is set and the assertion error will be executed in HiDeMOELoraModel.
             if past_key_values is not None and vision_tower is not None and images is not None and input_ids.shape[1] == 1:
-                #print("here0>>>>>>>>>>>>>>>>>>")
                 target_shape = past_key_values[-1][-1].shape[-2] + 1
                 attention_mask = torch.cat((attention_mask, torch.ones(
                     (attention_mask.shape[0], target_shape - attention_mask.shape[1]),
@@ -215,71 +149,21 @@ class LlavaMetaForCausalLM(ABC):
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
 
         if type(images) is list or images.ndim == 5:
-            #print("here1>>>>>>>>>>>>>>>>>>")
             concat_images = torch.cat([image for image in images], dim=0)
             image_features = self.encode_images(concat_images)
             split_sizes = [image.shape[0] for image in images]
             image_features = torch.split(image_features, split_sizes, dim=0)
             image_features = [x.flatten(0, 1).to(self.device) for x in image_features]
         else:
-            #print("here1>>>>>>>>>>>>>>>>>>")
             image_guide_features, image_features = self.encode_images(images)
 
-        #print("here2>>>>>>>>>>>>>>>>>>")
         assert image_features.shape[1] == 576, 'vision tower not a withprojection version.'
-        text_tower = self.get_text_tower()
-
-        # with torch.no_grad():
-        #     # image_guide_features: bs, 4096
-        #     image_guide_features = image_features[:,0]
         
         input_pad = np.where(input_ids.cpu().detach().numpy()!=-200,input_ids.cpu().detach().numpy(),self.tokenizer.pad_token_id)
         decoded_inputs = self.tokenizer.batch_decode(input_pad, skip_special_tokens=True)
         decoded_hidden_inputs = ['\n'.join(decode_input.split('\n')[1:]) for decode_input in decoded_inputs]
         decoded_clip_inputs = [decode_input.split(' ASSISTANT')[0] for decode_input in decoded_hidden_inputs]
-
-        clip_text_inputs = self.clip_tokenizer(
-                decoded_clip_inputs,
-                padding="longest",
-                max_length=77,
-                truncation=True,
-                return_tensors="pt",
-            )
-        #!核心，原型的计算
-        # text_guide_features: bs, 768
-        text_guide_features = text_tower(clip_text_inputs)
-        if self.training:
-
-            current_image_features = image_guide_features  # [batch_size, feature_dim]
-            current_text_features = text_guide_features  # [batch_size, feature_dim]
-            task_id = self.cur_task
-
-            image_sum = self.image_anchors[task_id] * self.image_boundary[task_id] + current_image_features.sum(dim=0)
-            text_sum = self.text_anchors[task_id] * self.text_boundary[task_id] + current_text_features.sum(dim=0)
-
-            self.image_boundary[task_id].data += current_image_features.shape[0]
-            self.text_boundary[task_id].data += current_text_features.shape[0]
-
-            self.image_anchors[task_id] = image_sum / self.image_boundary[task_id]
-            self.text_anchors[task_id] = text_sum / self.text_boundary[task_id]
-
-        else:
-            image_sim = []
-            text_sim = []
-            for image_anchor in self.image_anchors:
-                image_sims = F.cosine_similarity(image_guide_features.unsqueeze(1), image_anchor, dim=2)
-                image_sim.append(image_sims.max())
-            for text_anchor in self.text_anchors:
-                text_sims = F.cosine_similarity(text_guide_features.unsqueeze(1).to(self.device), text_anchor, dim=2)
-                text_sim.append(text_sims.max())
-
-            image_sim = torch.stack(image_sim[:self.expert_num])  # [expert_num]
-            text_sim = torch.stack(text_sim[:self.expert_num])    # [expert_num]
-
-            sim = text_sim # (image_sim + text_sim) / 2 # 改成sim = text_sim
-            #added by me
-            predicted_task_id=torch.argmax(sim).item()  # int, e.g., 2
-            _set_predicted_task_id_all_lora(predicted_task_id)
+        
         # TODO: image start / end is not implemented here to support pretraining.
         if getattr(self.config, 'tune_mm_mlp_adapter', False) and getattr(self.config, 'mm_use_im_start_end', False):
             raise NotImplementedError

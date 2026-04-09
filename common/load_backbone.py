@@ -3,7 +3,7 @@ import transformers
 from typing import Dict
 
 from .data_processor import smart_tokenizer_and_embedding_resize
-from .conversation import Conversation as conversation_lib
+from . import conversation as conversation_lib
 from backbone.llava.model import LlavaLlamaForCausalLM
 
 def setup_quantization(training_args, compute_dtype) -> Dict:
@@ -30,12 +30,13 @@ def setup_quantization(training_args, compute_dtype) -> Dict:
 
 def load_pretrained_model(model_name_or_path, training_args, bnb_args, has_vision=False):
     if has_vision:
-        if 'llava' in model_name_or_path:
+        if 'llava' in  model_name_or_path.lower():
             model = LlavaLlamaForCausalLM.from_pretrained(
                 model_name_or_path,
                 cache_dir=training_args.cache_dir,
                 **bnb_args
             )
+
     else:
         model = transformers.LlamaForCausalLM.from_pretrained(
             model_name_or_path,

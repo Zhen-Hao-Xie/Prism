@@ -68,6 +68,7 @@ def run_inference(task, model_path, gpu_list, chunks, chunk_idx, output_file):
     cmd = [
         "python", "-m", "backbone.llava.eval.model_unified",
         method,
+        "--clmethod", "hide_llava",
         "--model-path", str(model_path),
         "--model-base", str(BASE_MODEL_PATH),
         "--question-file", str(task["test_data_path"]),
