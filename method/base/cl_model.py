@@ -31,12 +31,6 @@ class CLModel(nn.Module):
         object.__setattr__(self, '_base_model', base_model)
         self._modules['_base_model'] = base_model  # ← 关键：手动注册到 _modules
         
-        # 关键 4: 验证 _base_model 已正确设置
-        _base_model = object.__getattribute__(self, '_base_model')
-        print(f"🔍 _base_model 已设置：{_base_model is not None}")
-        print(f"🔍 _base_model 类型：{type(_base_model)}")
-        print(f"🔍 _modules 内容：{list(self._modules.keys())}")
-        
         # 关键 5: 复制其他属性（非 nn.Module 属性）
         if hasattr(base_model, 'config'):
             object.__setattr__(self, 'config', base_model.config)

@@ -32,16 +32,6 @@ def load_from_checkpoint(model, checkpoint_path, merge_lora=False, for_increment
         target.load_state_dict(non_lora_weights, strict=False)
         print(f"    ✅ non-LoRA 加载完成")
     
-    # ========== 记录加载前的 LoRA 权重 ==========
-    print(f"\n🔍 加载前的 LoRA 权重（前3个）:")
-    lora_params_before = {}
-    count = 0
-    for name, param in lora_target.named_parameters():
-        if 'lora' in name.lower() and count < 3:
-            lora_params_before[name] = param.data.clone().cpu()
-            print(f"    {name}: norm={param.norm().item():.6f}")
-            count += 1
-    # ==========================================
     
     # ========== 加载 LoRA 权重 ==========
     if for_incremental_training:
@@ -78,30 +68,10 @@ def load_from_checkpoint(model, checkpoint_path, merge_lora=False, for_increment
         else:
             print(f"    ⚠️ 模型没有 load_adapter，手动加载...")
             _manual_load_lora(lora_target, checkpoint_path)
-    
-    # ========== 记录加载后的 LoRA 权重 ==========
-    print(f"\n🔍 加载后的 LoRA 权重（前3个）:")
-    count = 0
-    changed = 0
-    for name, param in lora_target.named_parameters():
-        if 'lora' in name.lower() and count < 3:
-            current_norm = param.norm().item()
-            print(f"    {name}: norm={current_norm:.6f}")
-            
-            if name in lora_params_before:
-                diff = (param.data.cpu() - lora_params_before[name]).norm().item()
-                if diff > 1e-6:
-                    print(f"      ✅ 权重已改变 (diff={diff:.6f})")
-                    changed += 1
-                else:
-                    print(f"      ⚠️ 权重未改变!")
-            count += 1
-    
-    print(f"\n  📊 权重变化: {changed}/{count} 个改变")
+
     # ==========================================
     
     # ========== 检查专家权重 ==========
-    print(f"\n🔍 检查专家权重差异:")
     expert_norms = {}
     for name, param in lora_target.named_parameters():
         if 'lora' in name.lower():
@@ -170,114 +140,3 @@ def _manual_load_lora(lora_target, checkpoint_path):
             print(f"      ❌ 无法映射权重")
     else:
         print(f"      ⚠️ 未找到 LoRA 权重文件")
-# def load_from_checkpoint(model, checkpoint_path, merge_lora=False, for_incremental_training=False):
-#     """从 checkpoint 加载模型权重"""
-#     print(f"Loading checkpoint from {checkpoint_path}...")
-    
-#     import os
-#     import torch
-    
-#     # ========== 找到正确的底层模型 ==========
-#     target_model = model
-    
-#     if hasattr(model, '_base_model'):
-#         print(f"  🔍 检测到 CLModel 包装")
-#         target_model = model._base_model
-        
-#         if hasattr(target_model, 'base_model'):
-#             print(f"  🔍 检测到内部还有 PEFT 包装")
-#             target_model = target_model.base_model
-    
-#     elif hasattr(model, 'base_model'):
-#         print(f"  🔍 检测到 PEFT 包装")
-#         target_model = model.base_model
-        
-#         if hasattr(target_model, 'model'):
-#             target_model = target_model.model
-    
-#     else:
-#         if hasattr(model, 'model'):
-#             target_model = model.model
-    
-#     print(f"  ✅ 目标模型类型：{type(target_model)}")
-    
-#     # ========== 加载 non-LoRA 权重 ==========
-#     non_lora_path = os.path.join(checkpoint_path, 'non_lora_trainables.bin')
-#     if os.path.exists(non_lora_path):
-#         print(f"  Loaded non-LoRA weights from {non_lora_path}")
-#         non_lora_weights = torch.load(non_lora_path, map_location='cpu')
-        
-#         if hasattr(target_model, 'model'):
-#             target_model.model.load_state_dict(non_lora_weights, strict=False)
-#         else:
-#             target_model.load_state_dict(non_lora_weights, strict=False)
-    
-#     # ========== 加载 LoRA 权重（关键修复）==========
-#     if for_incremental_training:
-#         # 检查是否是 PEFT 模型
-#         lora_target = model
-#         if hasattr(model, '_base_model'):
-#             lora_target = model._base_model
-        
-#         # 关键修复：load_adapter 期望目录路径，不是文件路径
-#         if hasattr(lora_target, 'load_adapter'):
-#             # PEFT 模型：使用 load_adapter，传入目录路径（不是文件路径）
-#             if os.path.exists(checkpoint_path):
-#                 print(f"  Loaded LoRA adapter from {checkpoint_path}")
-#                 lora_target.load_adapter(checkpoint_path, adapter_name='default')  # ← 传入目录
-#             else:
-#                 print(f"  ⚠️  Checkpoint 目录不存在：{checkpoint_path}")
-#         else:
-#             # 非 PEFT 模型：直接加载状态字典
-#             lora_path = os.path.join(checkpoint_path, 'adapter_model.bin')
-#             if os.path.exists(lora_path):
-#                 print(f"  Loaded LoRA weights from {lora_path}")
-#                 lora_weights = torch.load(lora_path, map_location='cpu')
-#                 lora_target.load_state_dict(lora_weights, strict=False)
-#                   # ========== 诊断：检查权重内容 ==========
-#             print(f"\n🔍 LoRA 权重诊断:")
-#             print(f"    总键数: {len(lora_weights)}")
-            
-#             # 检查专家相关权重
-#             expert_keys = {}
-#             for key in lora_weights.keys():
-#                 if 'lora_A' in key or 'lora_B' in key:
-#                     # 提取专家 ID
-#                     import re
-#                     match = re.search(r'expert_(\d+)', key)
-#                     if match:
-#                         expert_id = match.group(1)
-#                         if expert_id not in expert_keys:
-#                             expert_keys[expert_id] = []
-#                         expert_keys[expert_id].append(key)
-            
-#             print(f"    发现的专家 ID: {sorted(expert_keys.keys())}")
-            
-#             # 打印每个专家的权重范数
-#             for expert_id in sorted(expert_keys.keys()):
-#                 print(f"\n    Expert {expert_id}:")
-#                 sample_keys = expert_keys[expert_id][:3]
-#                 for key in sample_keys:
-#                     weight = lora_weights[key]
-#                     print(f"      {key}: shape={weight.shape}, norm={weight.norm().item():.6f}")
-            
-#             # 检查是否有 task_0 和 task_1 的区别
-#             if '0' in expert_keys and '1' in expert_keys:
-#                 # 比较 expert_0 和 expert_1 的第一个 lora_A 权重
-#                 key0 = [k for k in expert_keys['0'] if 'lora_A' in k][0]
-#                 key1 = [k for k in expert_keys['1'] if 'lora_A' in k][0]
-#                 diff = (lora_weights[key0] - lora_weights[key1]).norm().item()
-#                 print(f"\n    Expert 0 vs Expert 1 差异:")
-#                 print(f"      {key0} vs {key1}")
-#                 print(f"      L2 差异: {diff:.6f}")
-                
-#                 if diff < 1e-6:
-#                     print(f"      ⚠️ 警告：Expert 0 和 Expert 1 的权重几乎相同！")
-#             # =====================================
-            
-#             # 加载到模型
-#             missing, unexpected = lora_target.load_state_dict(lora_weights, strict=False)
-#             print(f"\n    ✅ LoRA 加载完成 (missing: {len(missing)}, unexpected: {len(unexpected)})")
-    
-#     print(f"✅ Checkpoint 加载完成")
-#     return model

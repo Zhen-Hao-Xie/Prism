@@ -37,6 +37,8 @@ class Hide_llavaIntegration(CLIntegration):
         
         # === 状态缓存 ===
         self._last_predicted_task_id: Optional[int] = None
+
+
     # method/hide_llava/integration.py
     def initialize_model(self, model):
         """
@@ -115,13 +117,6 @@ class Hide_llavaIntegration(CLIntegration):
         print(f"  总参数量：{total_params:,}")
         print(f"  可训练参数量：{trainable_params:,}")
         print(f"  可训练比例：{trainable_params / total_params * 100:.4f}%")
-        
-        if trainable_params < 1000000:
-            print(f"  ⚠️  警告：可训练参数过少！")
-        elif trainable_params > 100000000:
-            print(f"  ⚠️  警告：可训练参数过多！")
-        else:
-            print(f"  ✅ 参数量正常")
         
         print(f"{'='*70}\n")
         print(f"✅ HiDe 初始化完成 | 任务数：{self.num_tasks} | 特征维度：{self.feature_dim}")
@@ -372,16 +367,9 @@ class Hide_llavaIntegration(CLIntegration):
     def _predict_task(self, image_feat: torch.Tensor, text_feat: torch.Tensor, context: CLContext) -> int:
         device = image_feat.device
         
-        print(f"\n🔍 [HiDe] _predict_task 详细信息:")
-        print(f"    text_feat shape: {text_feat.shape}, device: {text_feat.device}")
-        print(f"    text_feat norm: {text_feat.norm().item():.4f}")
-        
         text_sims = []
         for t in range(self.expert_num):
-            # 确保 anchor 在正确设备并移到 text_feat 的设备
             anchor = self.text_anchors[t].to(text_feat.device)
-            
-            print(f"    task_{t}: anchor device={anchor.device}, norm={anchor.norm().item():.4f}")
             
             txt_sim = F.cosine_similarity(
                 text_feat.unsqueeze(1),
@@ -398,40 +386,6 @@ class Hide_llavaIntegration(CLIntegration):
         print(f"    argmax: {predicted_task_id}")
         
         return predicted_task_id
-    # def _predict_task(self, image_feat: torch.Tensor, text_feat: torch.Tensor, context: CLContext ) -> int:
-    #     """
-    #     推理时预测任务 ID
-    #     通过计算与每个任务原型的余弦相似度，取最大值
-    #     """
-    #     device = image_feat.device
-        
-    #     # 计算相似度
-    #     image_sims = []
-    #     text_sims = []
-        
-    #     for t in range(self.expert_num):
-    #         # 图像相似度: [B, 1, D] vs [1, D] -> [B, 1] -> scalar
-    #         img_sim = F.cosine_similarity(
-    #             image_feat.unsqueeze(1),  # [B, 1, D]
-    #             self.image_anchors[t],     # [1, D]
-    #             dim=2
-    #         ).max().item()
-    #         image_sims.append(img_sim)
-            
-    #         # 文本相似度
-    #         txt_sim = F.cosine_similarity(
-    #             text_feat.unsqueeze(1).to(device),
-    #             self.text_anchors[t],
-    #             dim=2
-    #         ).max().item()
-    #         text_sims.append(txt_sim)
-        
-    #     sim = (torch.tensor(image_sims, device=device) + torch.tensor(text_sims, device=device)) / 2
-    #     sim = torch.tensor(text_sims, device=device)  # 参考原代码
-        
-    #     predicted_task_id = int(torch.argmax(sim).item())
-    #     print(f"✅ 多模态路由：预测 task_id={predicted_task_id}")
-    #     return predicted_task_id
     
     def _propagate_task_id(self, model, task_id: int):
         """

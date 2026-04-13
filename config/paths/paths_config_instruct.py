@@ -2,7 +2,7 @@
 from pathlib import Path
 
 # 项目根目录（通常不需要改）
-PROJECT_ROOT = str(Path(__file__).parent.parent.absolute())
+PROJECT_ROOT = str(Path(__file__).parent.parent.parent.absolute())
 
 # 基础模型路径
 BASE_MODEL_PATH = "/root/autodl-tmp/LLaVa"
