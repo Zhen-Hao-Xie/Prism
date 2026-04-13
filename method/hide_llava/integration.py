@@ -377,7 +377,6 @@ class Hide_llavaIntegration(CLIntegration):
                 dim=2
             ).max().item()
             text_sims.append(txt_sim)
-            print(f"      sim={txt_sim:.4f}")
         
         sim = torch.tensor(text_sims, device=device)
         predicted_task_id = int(torch.argmax(sim).item())

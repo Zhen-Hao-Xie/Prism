@@ -723,8 +723,9 @@ def cmd_infer(args: argparse.Namespace) -> int:
             f.write(f"GPUS: {args.gpus}\n")
             f.write(f"STAGE: {args.stage}\n\n")
 
-        # Dedicated lock for this task's logging (avoid interleaving across chunks)
-        log_lock = threading.Lock()
+        # Dedicated lock for this task's logging (avoid interleaving across chunks).
+        # Use RLock because some logging helpers may be called in contexts that already hold the lock.
+        log_lock = threading.RLock()
 
         try:
             _log_line("=" * 60, log_file=log_path, mirror=mirror, lock=log_lock)
@@ -801,21 +802,19 @@ def cmd_infer(args: argparse.Namespace) -> int:
                         except Exception:
                             ok = False
                         if ok:
-                            with log_lock:
-                                _log_line(
-                                    f"  ✅ Chunk {idx} completed on GPU {gpus[idx]}",
-                                    log_file=log_path,
-                                    mirror=mirror,
-                                    lock=log_lock,
-                                )
+                            _log_line(
+                                f"  ✅ Chunk {idx} completed on GPU {gpus[idx]}",
+                                log_file=log_path,
+                                mirror=mirror,
+                                lock=log_lock,
+                            )
                         else:
-                            with log_lock:
-                                _log_line(
-                                    f"  ❌ Chunk {idx} failed on GPU {gpus[idx]}",
-                                    log_file=log_path,
-                                    mirror=mirror,
-                                    lock=log_lock,
-                                )
+                            _log_line(
+                                f"  ❌ Chunk {idx} failed on GPU {gpus[idx]}",
+                                log_file=log_path,
+                                mirror=mirror,
+                                lock=log_lock,
+                            )
                             failed_chunks.append(idx)
 
                 if failed_chunks:

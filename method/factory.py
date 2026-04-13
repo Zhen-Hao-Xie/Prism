@@ -112,33 +112,3 @@ class CLMethodFactory:
         # 创建实例
         return cls.create_integration(method_name, config)
 
-
-# ========== 注册所有 CL 方法 ==========
-
-# # SP 方法
-# try:
-#     from .sp.integration import SPIntegration
-#     CLMethodFactory.register("sp")(SPIntegration)
-# except ImportError:
-#     pass
-
-# # RanPAC 方法
-# try:
-#     from .ranpac.integration import RanPACIntegration
-#     CLMethodFactory.register("ranpac")(RanPACIntegration)
-# except ImportError:
-#     pass
-
-# # HiDe-LLaVA 方法
-# try:
-#     from .hide.integration import HiDeIntegration
-#     CLMethodFactory.register("hide")(HiDeIntegration)
-# except ImportError:
-#     pass
-
-# # SEFE 方法
-# try:
-#     from .sefe.integration import SEFEIntegration
-#     CLMethodFactory.register("sefe")(SEFEIntegration)
-# except ImportError:
-#     pass
