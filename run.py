@@ -70,7 +70,12 @@ def _parse_task_ids(values: Iterable[str]) -> list[int]:
 
 
 def _benchmark_dir_name(benchmark: str) -> str:
-    return "CoIN" if benchmark.lower() == "coin" else benchmark
+    if benchmark.lower() == "coin":
+        return "CoIN"
+    elif benchmark.lower() == "ucit":
+        return "UCIT"
+    else:
+        return benchmark
 
 
 def _resolve_paths(app_config: str):
@@ -303,7 +308,7 @@ def _build_train_command(
         "--data_path",
         str(task["train_data_path"]),
         "--image_folder",
-        paths["IMAGE_FOLDER"],
+        paths["IMAGE_FOLDER"] if task["image_folder"] is None else task["image_folder"],
         "--vision_tower",
         paths["CLIP_PATH"],
         "--text_tower",
@@ -386,6 +391,11 @@ EVAL_TASK_MAP = {
     "Grounding": "grounding",
     "VQAv2": "vqav2",
     "OCRVQA": "ocrvqa",
+    "ImageNet-R": "imagenetr",
+    "ArxivQA": "arxivqa",
+    "IconQA": "iconqa",
+    "CLEVR": "clevr",
+    "Flickr30k": "flickr30k",
 }
 
 
@@ -432,7 +442,7 @@ def _run_inference_one_chunk(
         "--question-file",
         str(task["test_data_path"]),
         "--image-folder",
-        paths["IMAGE_FOLDER"],
+        paths["IMAGE_FOLDER"] if task["image_folder"] is None else task["image_folder"],
         "--answers-file",
         str(output_file),
         "--num-chunks",
@@ -491,7 +501,7 @@ def _run_inference_parallel(
                 "--question-file",
                 str(task["test_data_path"]),
                 "--image-folder",
-                paths["IMAGE_FOLDER"],
+                paths["IMAGE_FOLDER"] if task["image_folder"] is None else task["image_folder"],
                 "--answers-file",
                 str(output_file),
                 "--num-chunks",
@@ -645,7 +655,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
     paths = _resolve_paths(args.app_config)
     task_ids = _parse_task_ids(args.tasks)
     stamp = _run_stamp()
-    mirror = bool(getattr(args, "console", False))
+    mirror = bool(getattr(args, "console", True))
 
     method_cfg = _load_method_config(args.method)
     if "--clmethod" not in sys.argv:
@@ -768,7 +778,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
                         "--question-file",
                         str(task["test_data_path"]),
                         "--image-folder",
-                        paths["IMAGE_FOLDER"],
+                        paths["IMAGE_FOLDER"] if task["image_folder"] is None else task["image_folder"],
                         "--answers-file",
                         str(output_file),
                         "--num-chunks",

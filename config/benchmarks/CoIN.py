@@ -42,7 +42,7 @@ COIN_TASKS = [
         "cur_task": 1,
         "name": "TextVQA",
         "train_data_path": f"{INSTRUCTION_DIR}/TextVQA/train.json",
-        "test_data_path": f"{INSTRUCTION_DIR}/TextVQA/test.json",
+        "test_data_path": f"{INSTRUCTION_DIR}/TextVQA/valid.json",
         "eval_annotation_path": f"{INSTRUCTION_DIR}/TextVQA/valid.json",
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task1_llava_lora",
         "previous_task": f"{CHECKPOINT_DIR}/CoIN/Task0_llava_lora",

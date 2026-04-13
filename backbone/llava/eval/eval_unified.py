@@ -819,6 +819,21 @@ def build_registry() -> EvaluatorRegistry:
     registry.register(GroundingEvaluator())
     registry.register(ScienceQAEvaluator())
     registry.register(GQAEvaluator())
+
+    # UCIT evaluators
+    from .eval_ucit import (
+        ImageNetREvaluator,
+        ArxivQAEvaluator,
+        IconQAEvaluator,
+        CLEVREvaluator,
+        Flickr30kEvaluator,
+    )
+    registry.register(ImageNetREvaluator())
+    registry.register(ArxivQAEvaluator())
+    registry.register(IconQAEvaluator())
+    registry.register(CLEVREvaluator())
+    registry.register(Flickr30kEvaluator())
+
     return registry
 
 
