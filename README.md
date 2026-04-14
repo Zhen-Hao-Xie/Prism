@@ -1,9 +1,9 @@
 # 内部开发指南
-Update by Jun-tao Tang, 2026/4/14
+Update by tjt
 
 ## Part 1. 如何运行（训练 / 推理 / 如何改配置参数）
 
-### 1) 先配路径（必改）
+### 1) 配路径
 
 训练/推理会通过 `--app-config {base|instruct}` 选择不同的路径配置：
 
@@ -108,7 +108,7 @@ class My_methodIntegration(CLIntegration):
 - `on_forward_start()/on_forward_end()`: forward 前后逻辑（可选）
 - `on_step_end()/on_task_end()`: 训练步/任务结束时的更新与保存（可选）
 
-4) **（推荐）实现方法额外状态保存/加载**
+4) **实现方法额外状态保存/加载**
 
 如果方法有“跨任务状态”（比如 anchors、Gram、covariance 快照等），实现：
 
@@ -117,7 +117,7 @@ class My_methodIntegration(CLIntegration):
 
 训练时会在加载 `previous_task_model_path` 后自动调用 `load_extra_state()`（见 `common/load_model.py`）。
 
-### B. 增加方法配置（强烈推荐）
+### B. 增加方法配置
 
 新建 `config/methods/my_method.py`，至少提供：
 
@@ -180,9 +180,3 @@ def ensure_peft_extension_registered():
 - 对 `CLModel` 的 `_base_model` 调用 `get_peft_model(...)` 并回写 `_base_model`
 
 ---
-
-## 常见坑（快速排雷）
-
-- **类名反射失败**：方法目录叫 `my_method`，类名必须能被 `my_method.capitalize()` 找到（即 `My_methodIntegration`）。
-- **方法额外状态没真的加载**：建议在 `load_extra_state()` 里做显式校验（例如关键 buffer/anchors 是否恢复），否则容易“打印加载成功但实际没生效”。
-- **checkpoint 路径**：`run.py` 会把 checkpoint 组织成 `checkpoints/<Benchmark>/<method>/TaskX_llava_lora/`，不要手动改目录结构。

@@ -448,6 +448,7 @@ def _run_inference_one_chunk(
     clmethod: str,
     temperature: str,
     conv_mode: str,
+    batch_size: int,
 ):
     eval_config = task["eval"]
     method = INFERENCE_METHOD_MAP.get(task["name"], "default")
@@ -469,6 +470,8 @@ def _run_inference_one_chunk(
         paths["IMAGE_FOLDER"] if task["image_folder"] is None else task["image_folder"],
         "--answers-file",
         str(output_file),
+        "--batch-size",
+        str(int(batch_size)),
         "--num-chunks",
         str(chunks),
         "--chunk-idx",
@@ -500,6 +503,7 @@ def _run_inference_parallel(
     clmethod: str,
     temperature: str,
     conv_mode: str,
+    batch_size: int,
 ):
     chunks = len(gpus)
     print_lock = threading.Lock()
@@ -528,6 +532,8 @@ def _run_inference_parallel(
                 paths["IMAGE_FOLDER"] if task["image_folder"] is None else task["image_folder"],
                 "--answers-file",
                 str(output_file),
+                "--batch-size",
+                str(int(batch_size)),
                 "--num-chunks",
                 str(chunks),
                 "--chunk-idx",
@@ -715,6 +721,12 @@ def cmd_infer(args: argparse.Namespace) -> int:
         if m_cl:
             args.clmethod = m_cl
 
+    # Inference batch size (for backbone.llava.eval.model_unified -> InferenceEngine)
+    infer_bs = getattr(args, "batch_size", None)
+    if infer_bs is None:
+        infer_bs = method_cfg.get("INFER_DEFAULTS", {}).get("batch_size", 1)
+    infer_bs = int(infer_bs)
+
     if args.model_path:
         model_path = args.model_path
         checkpoint_task = args.checkpoint_task
@@ -761,6 +773,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
                 clmethod=args.clmethod,
                 temperature=args.temperature,
                 conv_mode=args.conv_mode,
+                batch_size=infer_bs,
             )
 
             print("\nMerging results...")
@@ -991,6 +1004,12 @@ def main() -> None:
     p_infer.add_argument("--temperature", default="0")
     p_infer.add_argument("--conv-mode", default="vicuna_v1")
     p_infer.add_argument("--method", default="hide_llava")
+    p_infer.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Inference batch size for backbone.llava.eval.model_unified (overrides config/methods/<method>.py INFER_DEFAULTS.batch_size)",
+    )
     p_infer.add_argument("--console", action="store_true", help="Mirror output to console (default: write only to output/ logs)")
     p_infer.add_argument(
         "--app-config",

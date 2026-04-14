@@ -22,7 +22,11 @@ TRAIN_FLAG_OVERRIDES = {
 
 TRAIN_EXTRA_ARGS: list[str] = []
 
-INFER_DEFAULTS = {"clmethod": "hide_llava",}
+INFER_DEFAULTS = {
+    "clmethod": "hide_llava",
+    # Batch size for `backbone.llava.eval.model_unified` (InferenceEngine)
+    "batch_size": 12,
+}
 
 TRAIN_BATCH_SIZES = {
     "coin": {

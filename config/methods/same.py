@@ -21,7 +21,11 @@ TRAIN_EXTRA_ARGS: list[str] = []
 
 # NOTE: backbone eval currently doesn't accept "same" in --clmethod choices,
 # so this is mostly for consistency; set it if/when you add it to CLI.
-INFER_DEFAULTS = {"clmethod": "same"}
+INFER_DEFAULTS = {
+    "clmethod": "same",
+    # Batch size for `backbone.llava.eval.model_unified` (InferenceEngine)
+    "batch_size": 12,
+}
 
 # Per-method batch sizes: benchmark -> task_id -> batch_size
 TRAIN_BATCH_SIZES = {

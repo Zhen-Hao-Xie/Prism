@@ -30,7 +30,7 @@ INFER_DEFAULTS = {
     "checkpoint_task": "5",
     "checkpoint_suffix": "_llava_lora",
     "stage": "MoELoRA",
-    "method": "same",
+    "method": "hide_llava",
     "app_config": "instruct",
     "clmethod": "hide_llava",
     "temperature": "0",
