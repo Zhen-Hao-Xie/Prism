@@ -325,7 +325,11 @@ class SameIntegration(CLIntegration):
             return False
 
         same_state = {}
-        for name, buf in self._model_ref.named_buffers():
+        # 注意：CLModel 会把底层模型挂在 `_base_model` 下，
+        # 直接用 named_buffers() 会产生带 `_base_model.` 前缀的 key。
+        # 这里优先从真实可训练模型上取 buffers，避免保存出的 key 在加载时对不上。
+        model_for_buffers = getattr(self._model_ref, "_base_model", None) or self._model_ref
+        for name, buf in model_for_buffers.named_buffers():
             if any(k in name for k in ("cov_U_prev", "cov_S_prev", "importance", "cov_prev_valid")):
                 same_state[name] = buf.detach().cpu().clone()
         if not same_state:
@@ -346,8 +350,64 @@ class SameIntegration(CLIntegration):
             return False
 
         state = torch.load(p, map_location="cpu")
-        if model is not None:
-            model.load_state_dict(state, strict=False)
-            self._model_ref = model
-        return True
+        if model is None or not isinstance(state, dict):
+            return False
+
+        # 兼容两种 key:
+        # 1) 直接从底层模型保存：`...`
+        # 2) 从 CLModel 保存：`_base_model....`
+        if any(k.startswith("_base_model.") for k in state.keys()):
+            state = {k[len("_base_model."):]: v for k, v in state.items()}
+
+        target = getattr(model, "_base_model", None) or model
+
+        # 关键：不要依赖 load_state_dict 的 key 精确匹配。
+        # SAME 的 buffers 存在于注入后的各层（例如 *.cov_prev_valid_default），不同包装层级会改变前缀。
+        # 这里按 `named_buffers()` 做后缀匹配逐个拷贝，保证 cov_* 真正写入。
+        tracked_buffers = []
+        copied = 0
+        missing = 0
+
+        # 为提升性能，先把 state keys 变成 list（避免多次 view/iterator）
+        state_keys = list(state.keys())
+
+        for buf_name, buf in target.named_buffers():
+            if not any(k in buf_name for k in ("cov_U_prev", "cov_S_prev", "importance", "cov_prev_valid")):
+                continue
+
+            tracked_buffers.append(buf_name)
+
+            if buf_name in state:
+                buf.data.copy_(state[buf_name].to(dtype=buf.dtype, device=buf.device))
+                copied += 1
+                continue
+
+            # 后缀匹配（优先最长 key 命中）
+            cands = [k for k in state_keys if k.endswith(buf_name) or buf_name.endswith(k)]
+            if not cands:
+                missing += 1
+                continue
+            # 若 buf_name.endswth(k)，说明 state_key 是更短的“尾部路径”，同样可用
+            best = max(cands, key=len)
+            buf.data.copy_(state[best].to(dtype=buf.dtype, device=buf.device))
+            copied += 1
+
+        self._model_ref = model
+
+        # 主动验证：如果 cov_prev_valid 仍然全 False，直接报错，避免训练到 hook 才炸
+        cov_valid = []
+        for buf_name, buf in target.named_buffers():
+            if "cov_prev_valid_" in buf_name:
+                try:
+                    cov_valid.append(bool(buf.detach().cpu().item()))
+                except Exception:
+                    pass
+
+        if cov_valid and sum(cov_valid) == 0:
+            raise RuntimeError(
+                f"SAME extra state loaded from {p} but cov_prev_valid remains all False. "
+                f"copied={copied}, missing={missing}, tracked={len(tracked_buffers)}"
+            )
+
+        return copied > 0
 

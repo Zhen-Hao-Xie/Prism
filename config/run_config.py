@@ -8,7 +8,7 @@ Rule:
 
 # ===== Argument defaults (train) =====
 TRAIN_DEFAULTS = {
-    "benchmark": "coin",
+    "benchmark": "ucit",
     "gpus": "0,1",
     "port": 29601,
     "debug": False,
@@ -25,9 +25,9 @@ TRAIN_EXTRA_ARGS: list[str] = []
 
 # ===== Argument defaults (infer) =====
 INFER_DEFAULTS = {
-    "benchmark": "coin",
+    "benchmark": "ucit",
     "gpus": "0,1",
-    "checkpoint_task": "7",
+    "checkpoint_task": "5",
     "checkpoint_suffix": "_llava_lora",
     "stage": "MoELoRA",
     "method": "same",

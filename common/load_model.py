@@ -74,7 +74,7 @@ def load_model_for_train(model_args, data_args, training_args):
     if method_name != 'base':
         print(f"\n{'='*70}")
         print(f"🚀 检测到持续学习方法：{method_name}")
-        print(f"📌 HiDe 将自行处理 LoRA 注入")
+        print(f"📌 将由对应方法处理 PEFT/LoRA 注入")
         print(f"{'='*70}\n")
         
         CLModel, CLIntegration = _try_import_cl_components()
@@ -101,13 +101,16 @@ def load_model_for_train(model_args, data_args, training_args):
             )
             print(f"✅ Checkpoint 加载完成\n")
             
-            # 加载 HiDe 状态（anchors 等）
+            # 加载方法额外状态（如 SAME 的 same_state.bin / HiDe 的 anchors 等）
             if hasattr(model, '_integration'):
                 integration = model._integration
                 if hasattr(integration, 'load_extra_state'):
-                    print(f"🔧 加载之前任务的 HiDe 状态...")
-                    integration.load_extra_state(model_args.previous_task_model_path, model=model)
-                    print(f"✅ 之前任务的 anchors 已恢复")
+                    print(f"🔧 加载之前任务的方法额外状态...")
+                    ok = integration.load_extra_state(model_args.previous_task_model_path, model=model)
+                    if ok:
+                        print(f"✅ 方法额外状态已恢复")
+                    else:
+                        print(f"⚠️  未找到或无法加载方法额外状态（将继续训练）")
     else:
         assert(0)
     # =======================================================

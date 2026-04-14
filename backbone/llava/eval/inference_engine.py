@@ -74,20 +74,29 @@ class InferenceEngine:
         answers_file = os.path.expanduser(args.answers_file)
         os.makedirs(os.path.dirname(answers_file), exist_ok=True)
 
-        print(f"Evaluating {len(samples)} questions, saving to {answers_file}")
+        batch_size = getattr(args, "batch_size", 1)
+        print(
+            f"Evaluating {len(samples)} questions (batch size {batch_size}), saving to {answers_file}")
 
         with open(answers_file, "w", encoding="utf-8") as file:
-            for sample in tqdm(samples):
-                output = self.adapter.infer_one(sample, context)
-                result = {
-                    "question_id": sample["question_id"],
-                    "prompt": output["prompt"],
-                    "text": output["text"],
-                    "answer_id": shortuuid.uuid(),
-                    "model_id": context.model_name,
-                    "metadata": {},
-                }
-                file.write(json.dumps(result, ensure_ascii=False) + "\n")
+            for i in tqdm(range(0, len(samples), batch_size)):
+                batch_samples = samples[i:i + batch_size]
+                if hasattr(self.adapter, "infer_batch"):
+                    outputs = self.adapter.infer_batch(batch_samples, context)
+                else:
+                    outputs = [self.adapter.infer_one(
+                        sample, context) for sample in batch_samples]
+
+                for sample, output in zip(batch_samples, outputs):
+                    result = {
+                        "question_id": sample["question_id"],
+                        "prompt": output["prompt"],
+                        "text": output["text"],
+                        "answer_id": shortuuid.uuid(),
+                        "model_id": context.model_name,
+                        "metadata": {},
+                    }
+                    file.write(json.dumps(result, ensure_ascii=False) + "\n")
                 if getattr(args, "flush_each_line", False):
                     file.flush()
 
@@ -96,7 +105,7 @@ def read_image(image_path: str) -> Image.Image:
     return Image.open(image_path).convert("RGB")
 
 
-def default_generate(model: Any, input_ids: torch.Tensor, images: Optional[torch.Tensor], args: Any, **kwargs: Any) -> torch.Tensor:
+def default_generate(model: Any, input_ids: torch.Tensor, images: Optional[torch.Tensor], args: Any, attention_mask: Optional[torch.Tensor] = None, **kwargs: Any) -> torch.Tensor:
     generate_kwargs = {
         "do_sample": getattr(args, "temperature", 0.0) > 0,
         "temperature": getattr(args, "temperature", 0.0),
@@ -105,6 +114,8 @@ def default_generate(model: Any, input_ids: torch.Tensor, images: Optional[torch
         "max_new_tokens": getattr(args, "max_new_tokens", 128),
         "use_cache": True,
     }
+    if attention_mask is not None:
+        generate_kwargs["attention_mask"] = attention_mask
     generate_kwargs.update(kwargs)
 
     with torch.inference_mode():

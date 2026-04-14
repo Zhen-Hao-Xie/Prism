@@ -552,11 +552,11 @@ class SAMELinear(nn.Linear, SAMELayer):
             grad.data.copy_(scaled_grad.data)
             grad_norm_after = grad.norm().item()
 
-            if  grad_norm_before > 1e-10 and int(expert_id)!=self.cur_task:
-                print(f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id} | "
-                    f"k={k}/{len(S_prev)}, mu={mu:.1e} | "
-                    f"grad_norm: {grad_norm_before:.4f} → {grad_norm_after:.4f} "
-                    f"(ratio={grad_norm_after/grad_norm_before:.2f}x)")
+            # if  grad_norm_before > 1e-10 and int(expert_id)!=self.cur_task:
+            #     print(f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id} | "
+            #         f"k={k}/{len(S_prev)}, mu={mu:.1e} | "
+            #         f"grad_norm: {grad_norm_before:.4f} → {grad_norm_after:.4f} "
+            #         f"(ratio={grad_norm_after/grad_norm_before:.2f}x)")
             return scaled_grad
         return hook
     
