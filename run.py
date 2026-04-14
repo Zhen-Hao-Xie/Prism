@@ -762,43 +762,61 @@ def cmd_infer(args: argparse.Namespace) -> int:
 
                 def run_chunk(idx: int) -> bool:
                     output_file = result_dir / f"{chunks}_{idx}.jsonl"
-                    eval_config = task["eval"]
-                    method = INFERENCE_METHOD_MAP.get(task["name"], "default")
-                    cmd = [
-                        sys.executable,
-                        "-m",
-                        "backbone.llava.eval.model_unified",
-                        method,
-                        "--clmethod",
-                        str(args.clmethod),
-                        "--model-path",
-                        str(model_path),
-                        "--model-base",
-                        paths["BASE_MODEL_PATH"],
-                        "--question-file",
-                        str(task["test_data_path"]),
-                        "--image-folder",
-                        paths["IMAGE_FOLDER"] if task["image_folder"] is None else task["image_folder"],
-                        "--answers-file",
-                        str(output_file),
-                        "--num-chunks",
-                        str(chunks),
-                        "--chunk-idx",
-                        str(idx),
-                        "--temperature",
-                        str(args.temperature),
-                        "--conv-mode",
-                        str(args.conv_mode),
-                    ]
-                    if paths["CLIP_PATH"]:
-                        cmd.extend(["--text-tower", paths["CLIP_PATH"]])
-                    if eval_config.get("inference_args"):
-                        cmd.extend(_format_args(eval_config["inference_args"], **task))
+                    try:
+                        eval_config = task["eval"]
+                        method = INFERENCE_METHOD_MAP.get(task["name"], "default")
+                        image_folder = task.get("image_folder")
+                        if image_folder is None:
+                            image_folder = paths["IMAGE_FOLDER"]
 
-                    env = os.environ.copy()
-                    env["CUDA_VISIBLE_DEVICES"] = str(gpus[idx])
-                    rc = _stream_run(cmd, cwd=PROJECT_ROOT, env=env, log_file=log_path, lock=log_lock, mirror=mirror)
-                    return rc == 0
+                        cmd = [
+                            sys.executable,
+                            "-m",
+                            "backbone.llava.eval.model_unified",
+                            method,
+                            "--clmethod",
+                            str(args.clmethod),
+                            "--model-path",
+                            str(model_path),
+                            "--model-base",
+                            paths["BASE_MODEL_PATH"],
+                            "--question-file",
+                            str(task["test_data_path"]),
+                            "--image-folder",
+                            str(image_folder),
+                            "--answers-file",
+                            str(output_file),
+                            "--num-chunks",
+                            str(chunks),
+                            "--chunk-idx",
+                            str(idx),
+                            "--temperature",
+                            str(args.temperature),
+                            "--conv-mode",
+                            str(args.conv_mode),
+                        ]
+                        if paths["CLIP_PATH"]:
+                            cmd.extend(["--text-tower", paths["CLIP_PATH"]])
+                        if eval_config.get("inference_args"):
+                            cmd.extend(_format_args(eval_config["inference_args"], **task))
+
+                        env = os.environ.copy()
+                        env["CUDA_VISIBLE_DEVICES"] = str(gpus[idx])
+                        rc = _stream_run(cmd, cwd=PROJECT_ROOT, env=env, log_file=log_path, lock=log_lock, mirror=mirror)
+                        return rc == 0
+                    except Exception as e:
+                        import traceback
+
+                        _log_line(
+                            f"  ❌ Chunk {idx} crashed before/while launching subprocess: {e}",
+                            log_file=log_path,
+                            mirror=mirror,
+                            lock=log_lock,
+                        )
+                        tb = traceback.format_exc()
+                        for line in tb.splitlines():
+                            _log_line(f"    {line}", log_file=log_path, mirror=mirror, lock=log_lock)
+                        return False
 
                 import concurrent.futures
 
