@@ -374,6 +374,7 @@ class HiDeMOELoraLinear(nn.Linear, HiDeMOELoraLayer):
             return
         if self.r[self.active_adapter] > 0:
             self.merged = False
+
     def forward(self, x: torch.Tensor, **kwargs):
         previous_dtype = x.dtype
 

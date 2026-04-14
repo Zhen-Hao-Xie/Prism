@@ -200,6 +200,12 @@ def load_model_for_inference(
                 CLModel, CLIntegration = _try_import_cl_components()
                 if CLModel is not None:
                     module = __import__(f"method.{method}.integration", fromlist=[''])
+                    # 若方法提供 PEFT 扩展注册，按需触发（避免 import-time 副作用）
+                    if hasattr(module, "ensure_peft_extension_registered"):
+                        try:
+                            module.ensure_peft_extension_registered()
+                        except Exception as e:
+                            print(f"⚠️  方法 {method} 的 PEFT 扩展注册失败：{e}")
                     IntegrationClass = getattr(module, f"{method.capitalize()}Integration")
                     
                     class SimpleArgs:

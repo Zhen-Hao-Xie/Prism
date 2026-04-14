@@ -13,6 +13,91 @@ moderation_msg = "YOUR INPUT VIOLATES OUR CONTENT MODERATION GUIDELINES. PLEASE 
 
 handler = None
 
+# ===== Custom log levels for this project =====
+# Keep standard DEBUG=10. Define INFER/TRAIN as distinct levels above INFO.
+INFER_LEVEL = 21
+TRAIN_LEVEL = 22
+logging.addLevelName(INFER_LEVEL, "INFER")
+logging.addLevelName(TRAIN_LEVEL, "TRAIN")
+
+
+def _env_log_level(default: str = "INFER") -> str:
+    return str(os.environ.get("PYMCIT_LOG_LEVEL", default)).strip().upper()
+
+
+def set_log_level(level: str) -> None:
+    """
+    Set global log level.
+
+    Supported: DEBUG / INFER / TRAIN / INFO / WARNING / ERROR / CRITICAL
+    """
+    lvl = str(level).strip().upper()
+    root = logging.getLogger()
+    if lvl == "DEBUG":
+        root.setLevel(logging.DEBUG)
+    elif lvl == "INFER":
+        root.setLevel(INFER_LEVEL)
+    elif lvl == "TRAIN":
+        root.setLevel(TRAIN_LEVEL)
+    else:
+        root.setLevel(getattr(logging, lvl, logging.INFO))
+
+
+class _ProjectLevelFilter(logging.Filter):
+    """
+    Filter that maps our custom levels onto a simple threshold.
+    """
+
+    _order = {
+        "DEBUG": logging.DEBUG,
+        "INFER": INFER_LEVEL,
+        "TRAIN": TRAIN_LEVEL,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+
+    def __init__(self, level_name: str):
+        super().__init__()
+        self.threshold = self._order.get(level_name.upper(), INFER_LEVEL)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return int(record.levelno) >= int(self.threshold)
+
+
+def get_logger(name: str) -> logging.Logger:
+    """
+    Lightweight logger accessor. Respects env `PYMCIT_LOG_LEVEL`.
+    """
+    logger = logging.getLogger(name)
+    # Ensure root has at least one handler/formatter
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=INFER_LEVEL)
+    # Apply level and filter once
+    level_name = _env_log_level()
+    set_log_level(level_name)
+    for h in logging.getLogger().handlers:
+        if not any(isinstance(f, _ProjectLevelFilter) for f in getattr(h, "filters", [])):
+            h.addFilter(_ProjectLevelFilter(level_name))
+    return logger
+
+
+def log_infer(msg: str, *, logger: logging.Logger | None = None) -> None:
+    (logger or get_logger("infer")).log(INFER_LEVEL, msg)
+
+
+def log_train(msg: str, *, logger: logging.Logger | None = None) -> None:
+    (logger or get_logger("train")).log(TRAIN_LEVEL, msg)
+
+
+def log_debug(msg: str, *, logger: logging.Logger | None = None) -> None:
+    (logger or get_logger("debug")).debug(msg)
+
+
+def is_debug() -> bool:
+    return _env_log_level().upper() == "DEBUG"
+
 
 def build_logger(logger_name, logger_filename):
     global handler

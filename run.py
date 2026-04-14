@@ -29,7 +29,6 @@ def _load_run_config() -> dict:
             "TRAIN_FLAG_OVERRIDES": getattr(run_config, "TRAIN_FLAG_OVERRIDES", {}) or {},
             "TRAIN_EXTRA_ARGS": getattr(run_config, "TRAIN_EXTRA_ARGS", []) or [],
             "INFER_DEFAULTS": getattr(run_config, "INFER_DEFAULTS", {}) or {},
-            "TRAIN_BATCH_SIZES": getattr(run_config, "TRAIN_BATCH_SIZES", {}) or {},
         }
     except Exception:
         return {
@@ -37,7 +36,6 @@ def _load_run_config() -> dict:
             "TRAIN_FLAG_OVERRIDES": {},
             "TRAIN_EXTRA_ARGS": [],
             "INFER_DEFAULTS": {},
-            "TRAIN_BATCH_SIZES": {},
         }
 
 
@@ -48,12 +46,14 @@ def _load_method_config(method: str) -> dict:
             "TRAIN_FLAG_OVERRIDES": getattr(mod, "TRAIN_FLAG_OVERRIDES", {}) or {},
             "TRAIN_EXTRA_ARGS": getattr(mod, "TRAIN_EXTRA_ARGS", []) or [],
             "INFER_DEFAULTS": getattr(mod, "INFER_DEFAULTS", {}) or {},
+            "TRAIN_BATCH_SIZES": getattr(mod, "TRAIN_BATCH_SIZES", {}) or {},
         }
     except Exception:
         return {
             "TRAIN_FLAG_OVERRIDES": {},
             "TRAIN_EXTRA_ARGS": [],
             "INFER_DEFAULTS": {},
+            "TRAIN_BATCH_SIZES": {},
         }
 
 
@@ -76,6 +76,29 @@ def _benchmark_dir_name(benchmark: str) -> str:
         return "UCIT"
     else:
         return benchmark
+
+
+def _method_dir_name(method: str) -> str:
+    # keep dir names stable and simple
+    return str(method).strip().lower()
+
+
+def _method_checkpoint_path(checkpoint_dir: str, benchmark: str, method: str, ckpt_name: str) -> Path:
+    """
+    New layout:
+      CHECKPOINT_DIR/<Benchmark>/<method>/<TaskX_suffix>
+
+    Backward compatible with old layout:
+      CHECKPOINT_DIR/<Benchmark>/<TaskX_suffix>
+    """
+    benchmark_dir = _benchmark_dir_name(benchmark)
+    method_dir = _method_dir_name(method)
+    return Path(checkpoint_dir) / benchmark_dir / method_dir / ckpt_name
+
+
+def _legacy_checkpoint_path(checkpoint_dir: str, benchmark: str, ckpt_name: str) -> Path:
+    benchmark_dir = _benchmark_dir_name(benchmark)
+    return Path(checkpoint_dir) / benchmark_dir / ckpt_name
 
 
 def _resolve_paths(app_config: str):
@@ -308,7 +331,7 @@ def _build_train_command(
         "--data_path",
         str(task["train_data_path"]),
         "--image_folder",
-        paths["IMAGE_FOLDER"] if task["image_folder"] is None else task["image_folder"],
+        paths["IMAGE_FOLDER"] if (task.get("image_folder") is None) else task.get("image_folder"),
         "--vision_tower",
         paths["CLIP_PATH"],
         "--text_tower",
@@ -330,6 +353,7 @@ def _build_train_command(
         "--bf16",
         "True",
         "--output_dir",
+        # NOTE: output_dir is overridden in cmd_train to include method
         str(task["output_dir"]),
         "--num_train_epochs",
         "1",
@@ -590,6 +614,8 @@ def cmd_train(args: argparse.Namespace) -> int:
     # benchmark configs are imported in *this* process
     os.environ["APP_CONFIG"] = str(args.app_config)
     env = _build_env(args.app_config)
+    # Default logging level for subprocesses
+    env["PYMCIT_LOG_LEVEL"] = "DEBUG" if bool(args.debug) else "TRAIN"
     paths = _resolve_paths(args.app_config)
     task_ids = _parse_task_ids(args.tasks)
     stamp = _run_stamp()
@@ -600,7 +626,7 @@ def cmd_train(args: argparse.Namespace) -> int:
     flag_overrides = dict(cfg.get("TRAIN_FLAG_OVERRIDES", {}))
     flag_overrides.update(method_cfg.get("TRAIN_FLAG_OVERRIDES", {}))
     extra_args = list(cfg.get("TRAIN_EXTRA_ARGS", [])) + list(method_cfg.get("TRAIN_EXTRA_ARGS", []))
-    batch_sizes = cfg.get("TRAIN_BATCH_SIZES", {})
+    batch_sizes = method_cfg.get("TRAIN_BATCH_SIZES", {})
 
     for task_id in task_ids:
         task = _get_task_config(args.benchmark, task_id)
@@ -614,13 +640,28 @@ def cmd_train(args: argparse.Namespace) -> int:
                 f"Missing batch_size for benchmark={args.benchmark} task={task_id}. "
                 f"Set in config/run_config.py TRAIN_BATCH_SIZES."
             )
+        # ==== Method-aware checkpoint layout ====
+        # Override task output_dir / previous_task to include method subdir.
+        ckpt_root = paths["CHECKPOINT_DIR"]
+        ckpt_name = f"Task{task['cur_task']}_llava_lora"
+        new_out = _method_checkpoint_path(ckpt_root, args.benchmark, args.method, ckpt_name)
+        task = dict(task)
+        task["output_dir"] = str(new_out)
+
+        if task.get("previous_task"):
+            prev_name = Path(str(task["previous_task"])).name
+            new_prev = _method_checkpoint_path(ckpt_root, args.benchmark, args.method, prev_name)
+            legacy_prev = _legacy_checkpoint_path(ckpt_root, args.benchmark, prev_name)
+            task["previous_task"] = str(new_prev if new_prev.exists() else legacy_prev)
+        # ==============================
+
+        # log path layout: output/train/<benchmark>/<method>/taskXX/run_*.txt
         log_path = (
             PROJECT_ROOT
             / "output"
             / "train"
-            / "text"
-            / args.method
             / args.benchmark
+            / args.method
             / f"task{task_id:02d}"
             / f"run_{stamp}.txt"
         )
@@ -629,21 +670,31 @@ def cmd_train(args: argparse.Namespace) -> int:
         _log_line(f"TRAIN method={args.method} benchmark={args.benchmark} task={task_id}", log_file=log_path, mirror=mirror)
         _log_line(f"log: {log_path}", log_file=log_path, mirror=mirror)
 
-        cmd = _build_train_command(
-            task,
-            gpus=args.gpus,
-            port=args.port,
-            debug=args.debug,
-            method=args.method,
-            paths=paths,
-            batch_size=int(bs),
-        )
-        cmd = _apply_flag_overrides(cmd, flag_overrides)
-        cmd = _append_args(cmd, extra_args)
+        try:
+            cmd = _build_train_command(
+                task,
+                gpus=args.gpus,
+                port=args.port,
+                debug=args.debug,
+                method=args.method,
+                paths=paths,
+                batch_size=int(bs),
+            )
+            cmd = _apply_flag_overrides(cmd, flag_overrides)
+            cmd = _append_args(cmd, extra_args)
 
-        rc = _tee_run(cmd, cwd=PROJECT_ROOT, env=env, log_file=log_path, mirror=mirror)
-        if rc != 0:
-            return rc
+            rc = _tee_run(cmd, cwd=PROJECT_ROOT, env=env, log_file=log_path, mirror=mirror)
+            if rc != 0:
+                return rc
+        except Exception as e:
+            import traceback
+
+            _log_line("\n❌ Failed before launching training subprocess.", log_file=log_path, mirror=mirror)
+            _log_line(f"Exception: {type(e).__name__}: {e}", log_file=log_path, mirror=mirror)
+            tb = traceback.format_exc()
+            for line in tb.splitlines():
+                _log_line(line, log_file=log_path, mirror=mirror)
+            return 1
 
     return 0
 
@@ -652,6 +703,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
     # benchmark configs are imported in *this* process
     os.environ["APP_CONFIG"] = str(args.app_config)
     env = _build_env(args.app_config)
+    env["PYMCIT_LOG_LEVEL"] = "DEBUG" if bool(getattr(args, "debug", False)) else "INFER"
     paths = _resolve_paths(args.app_config)
     task_ids = _parse_task_ids(args.tasks)
     stamp = _run_stamp()
@@ -668,9 +720,10 @@ def cmd_infer(args: argparse.Namespace) -> int:
         checkpoint_task = args.checkpoint_task
     else:
         checkpoint_dir = paths["CHECKPOINT_DIR"]
-        benchmark_dir = _benchmark_dir_name(args.benchmark)
         ckpt_name = f"Task{args.checkpoint_task}{args.checkpoint_suffix}"
-        model_path = str(Path(checkpoint_dir) / benchmark_dir / ckpt_name)
+        new_path = _method_checkpoint_path(checkpoint_dir, args.benchmark, args.method, ckpt_name)
+        legacy_path = _legacy_checkpoint_path(checkpoint_dir, args.benchmark, ckpt_name)
+        model_path = str(new_path if new_path.exists() else legacy_path)
         checkpoint_task = args.checkpoint_task
 
     y = _infer_y_label(args.model_path, checkpoint_task)

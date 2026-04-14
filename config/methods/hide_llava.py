@@ -24,3 +24,24 @@ TRAIN_EXTRA_ARGS: list[str] = []
 
 INFER_DEFAULTS = {"clmethod": "hide_llava",}
 
+TRAIN_BATCH_SIZES = {
+    "coin": {
+        0: 12,
+        1: 12,
+        2: 12,
+        3: 8,
+        4: 8,
+        5: 8,
+        6: 8,
+        7: 8,
+    }
+}
+
+# Method parameters (used by method factory / integrations if needed)
+METHOD_CONFIG = {
+    "expert_num": 8,
+    "clip_feature_dim": 768,
+    "lora_r": 64,
+    "lora_alpha": 128,
+    "lora_dropout": 0.05,
+}

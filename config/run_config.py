@@ -12,7 +12,8 @@ TRAIN_DEFAULTS = {
     "gpus": "0,1",
     "port": 29601,
     "debug": False,
-    "method": "hide_llava",
+    #same,hide_llava
+    "method": "same",
     "app_config": "instruct",
     # If True, mirror logs to console; otherwise write only to files under output/
     "console": False,
@@ -29,7 +30,7 @@ INFER_DEFAULTS = {
     "checkpoint_task": "7",
     "checkpoint_suffix": "_llava_lora",
     "stage": "MoELoRA",
-    "method": "hide_llava",
+    "method": "same",
     "app_config": "instruct",
     "clmethod": "hide_llava",
     "temperature": "0",
@@ -38,18 +39,7 @@ INFER_DEFAULTS = {
     "console": False,
 }
 
-# ===== Training batch size (decoupled from benchmark configs) =====
-# Mapping: benchmark -> task_id -> batch_size
-TRAIN_BATCH_SIZES = {
-    "coin": {
-        0: 12,
-        1: 12,
-        2: 12,
-        3: 8,
-        4: 8,
-        5: 8,
-        6: 8,
-        7: 8,
-    }
-}
-
+"""
+Note:
+- Train batch sizes are method-specific and live under `config/methods/<method>.py` as TRAIN_BATCH_SIZES.
+"""

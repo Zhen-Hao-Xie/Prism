@@ -57,7 +57,15 @@ class DefaultTaskAdapter(BaseInferenceAdapter):
         return os.path.join(image_folder, image_file)
 
     def infer_one(self, sample: Dict[str, Any], context: InferenceContext) -> Dict[str, str]:
-        question = sample["text"]
+        # Compatible with different dataset schemas (e.g. TextVQA uses "question")
+        question = (
+            sample.get("text")
+            or sample.get("question")
+            or sample.get("prompt")
+            or sample.get("query")
+        )
+        if question is None:
+            raise KeyError(f"Missing question field in sample, keys={list(sample.keys())}")
         qs = self._build_question_with_image_token(
             question, context.model.config)
 
@@ -66,7 +74,12 @@ class DefaultTaskAdapter(BaseInferenceAdapter):
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
 
-        image_file = sample["image"]
+        image_file = sample.get("image")
+        if image_file is None:
+            # TextVQA commonly uses image_id; map to a filename if your dataset stores files that way.
+            image_file = sample.get("image_id")
+        if image_file is None:
+            raise KeyError(f"Missing image field in sample, keys={list(sample.keys())}")
         image_path = self._resolve_image_path(
             image_file, context.args.image_folder)
         image = read_image(image_path)
@@ -125,7 +138,14 @@ class ScienceQATaskAdapter(BaseInferenceAdapter):
     
     def infer_one(self, sample: Dict[str, Any], context: InferenceContext) -> Dict[str, str]:
         """执行单个样本的推理"""
-        question = sample["text"]
+        question = (
+            sample.get("text")
+            or sample.get("question")
+            or sample.get("prompt")
+            or sample.get("query")
+        )
+        if question is None:
+            raise KeyError(f"Missing question field in sample, keys={list(sample.keys())}")
         qs = question.replace("<image>", "").strip()
         cur_prompt = qs
 

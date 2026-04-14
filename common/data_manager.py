@@ -6,6 +6,7 @@ import json
 import random
 import os
 import copy
+import os.path
 from typing import Any, Dict, Iterator, List, Optional
 import torch
 from PIL import Image
@@ -149,8 +150,17 @@ class ImageFinder:
         if not self.image_folder:
             self._index = index
             return
-        print(f"Building image index for folder: {self.image_folder}")
-        for dirpath, _, filenames in tqdm(os.walk(self.image_folder)):
+        from common.logging import log_infer, log_debug, is_debug
+
+        log_infer(f"Building image index for folder: {self.image_folder}")
+
+        # tqdm 在多进程/多线程日志中会产生控制字符（如 \x1b[A），导致日志“很乱”
+        # 非 DEBUG 默认禁用进度条，保持日志干净可读。
+        walker = os.walk(self.image_folder)
+        if is_debug():
+            walker = tqdm(walker, dynamic_ncols=True, leave=False)
+
+        for dirpath, _, filenames in walker:
             for filename in filenames:
                 lower = filename.lower()
                 if not lower.endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp")):
@@ -160,17 +170,36 @@ class ImageFinder:
 
     def find(self, image_file):
         """查找图像文件的完整路径"""
+        if image_file is None:
+            raise FileNotFoundError(f"Image not found: {image_file} under image_folder={self.image_folder}")
+
         # 情况1：直接拼接
         direct_path = os.path.join(self.image_folder, image_file)
         if os.path.isfile(direct_path):
             return direct_path
 
+        # 情况1.5：如果是 image_id（无扩展名），尝试常见扩展名
+        base_name = os.path.basename(image_file)
+        root, ext = os.path.splitext(base_name)
+        if ext == "":
+            for e in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
+                p = os.path.join(self.image_folder, base_name + e)
+                if os.path.isfile(p):
+                    return p
+
         # 情况2：递归查找（基于文件名）
         if self._index is None:
             self.build_index()
-        candidate = self._index.get(os.path.basename(image_file))
+        candidate = self._index.get(base_name)
         if candidate and os.path.isfile(candidate):
             return candidate
+
+        # 情况3：递归索引里按 image_id 匹配（例如 003a... -> 003a....jpg）
+        if ext == "":
+            for e in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
+                candidate = self._index.get(base_name + e)
+                if candidate and os.path.isfile(candidate):
+                    return candidate
 
         raise FileNotFoundError(
             f"Image not found: {image_file} under image_folder={self.image_folder}"

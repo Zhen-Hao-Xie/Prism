@@ -36,6 +36,7 @@ from .tuners import (
     PromptEncoderConfig,
     PromptTuningConfig,
     HiDeMOELoraConfig,
+    SAMEConfig,
 )
 from .utils import PromptLearningConfig, _prepare_prompt_learning_config
 
@@ -65,6 +66,7 @@ PEFT_TYPE_TO_CONFIG_MAPPING = {
     "ADALORA": AdaLoraConfig,
     "IA3": IA3Config,
     "MOE_LORA_HiDe": HiDeMOELoraConfig,
+    "MOE_LORA_SAME": SAMEConfig,
 }
 
 

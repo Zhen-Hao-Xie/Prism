@@ -4,7 +4,7 @@
 import copy
 import base64
 from io import BytesIO
-from typing import Dict,Sequence
+from typing import Dict, Sequence, Any, List
 import torch
 from PIL import Image
 import transformers
@@ -96,10 +96,41 @@ def smart_tokenizer_and_embedding_resize(
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
+def _normalize_to_list(obj: Any) -> List[Any]:
+    """
+    推理/训练数据在不同 benchmark 下可能是 list 或 dict(json)。
+    这里统一转换成可切片的 list，避免 split_list 对 dict 切片时报错。
+    """
+    if obj is None:
+        return []
+    if isinstance(obj, list):
+        return obj
+    if isinstance(obj, tuple):
+        return list(obj)
+    if isinstance(obj, dict):
+        # 常见数据格式：{"questions":[...]} / {"data":[...]} / {"samples":[...]}
+        for key in ("questions", "data", "samples", "annotations", "instances"):
+            val = obj.get(key, None)
+            if isinstance(val, list):
+                return val
+        # 兜底：只取 values（大多数情况下 dict 本身是 id->sample）
+        return list(obj.values())
+    # 其他可迭代对象（如 Dataset、generator）转 list；不可迭代则抛更清晰的错误
+    try:
+        return list(obj)
+    except TypeError as e:
+        raise TypeError(f"split_list 期望 list-like，但收到 {type(obj)}") from e
+
+
 def split_list(lst, n):
-    """将列表均匀分成 n 份"""
-    chunk_size = math.ceil(len(lst) / n)
-    return [lst[i:i+chunk_size] for i in range(0, len(lst), chunk_size)]
+    """将列表均匀分成 n 份（兼容 dict/json 数据）"""
+    lst = _normalize_to_list(lst)
+    if n <= 0:
+        raise ValueError(f"n must be positive, got n={n}")
+    if len(lst) == 0:
+        return [[] for _ in range(n)]
+    chunk_size = max(1, math.ceil(len(lst) / n))
+    return [lst[i : i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
 def get_chunk(lst, n, k):
     """获取第 k 份数据"""

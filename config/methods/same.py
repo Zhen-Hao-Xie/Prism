@@ -1,0 +1,57 @@
+"""
+Defaults for method: same
+"""
+
+TRAIN_FLAG_OVERRIDES = {
+    "--method": "same",
+    "--expert_num": "8",
+    "--lora_r": "64",
+    "--lora_alpha": "128",
+    "--mm_projector_lr": "2e-5",
+    "--num_train_epochs": "1",
+    "--learning_rate": "2e-4",
+    "--warmup_ratio": "0.03",
+    "--lr_scheduler_type": "cosine",
+    "--logging_steps": "1",
+    "--model_max_length": "2048",
+    "--dataloader_num_workers": "4",
+}
+
+TRAIN_EXTRA_ARGS: list[str] = []
+
+# NOTE: backbone eval currently doesn't accept "same" in --clmethod choices,
+# so this is mostly for consistency; set it if/when you add it to CLI.
+INFER_DEFAULTS = {"clmethod": "same"}
+
+# Per-method batch sizes: benchmark -> task_id -> batch_size
+TRAIN_BATCH_SIZES = {
+    "coin": {
+        0: 6,
+        1: 6,
+        2: 6,
+        3: 6,
+        4: 6,
+        5: 6,
+        6: 6,
+        7: 6,
+    }
+}
+
+# Method parameters (was in same.yaml)
+METHOD_CONFIG = {
+    "expert_num": 8,
+    "clip_feature_dim": 768,
+    "cur_task": 0,
+    "lora_r": 64,
+    "lora_alpha": 128,
+    "lora_dropout": 0.05,
+    "routing_temperature": 1.0,
+    "temparature": 2.0,
+    "temparature_2": 1.5,
+    "threshold": 0.5,
+    "remaining_prob": 0.85,
+    "other_total_prob": 0.15,
+    "top2_ratio": [3.0, 2.0],
+}
+
+

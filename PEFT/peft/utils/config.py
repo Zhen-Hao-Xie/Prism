@@ -34,6 +34,7 @@ class PeftType(str, enum.Enum):
     ADAPTION_PROMPT = "ADAPTION_PROMPT"
     IA3 = "IA3"
     MOE_LORA_HiDe = "MOE_LORA_HiDe"
+    MOE_LORA_SAME = "MOE_LORA_SAME"
 
 
 class TaskType(str, enum.Enum):

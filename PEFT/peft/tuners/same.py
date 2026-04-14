@@ -38,7 +38,7 @@ class SAMEConfig(LoraConfig):
     cur_task: int = field(default=0)
 
     def __post_init__(self):
-        self.peft_type = PeftType.MOE_LORA_HiDe
+        self.peft_type = PeftType.MOE_LORA_SAME
 
 
 class SAMEModel(LoraModel):
@@ -225,6 +225,15 @@ class SAMELayer(LoraLayer):
             self.lora_B.update(nn.ModuleDict({adapter_name: SAMELinearB(
                 r, self.out_features, self.expert_num, self.cur_task, self.training, self.layer_id)}))
             self.scaling[adapter_name] = lora_alpha / r
+
+            # ✅ 新增：显式设置所有专家参数为可训练
+            for expert_id in range(self.expert_num):
+                for param in self.lora_A[adapter_name].loraA[expert_id].parameters():
+                    param.requires_grad_(True)
+                for param in self.lora_B[adapter_name].loraB[expert_id].parameters():
+                    param.requires_grad_(True)
+
+
         if init_lora_weights:
             self.reset_lora_parameters(adapter_name)
         self.to(self.weight.device)
@@ -234,6 +243,9 @@ class SAMELayer(LoraLayer):
             for i in range(self.expert_num):
                 nn.init.normal_(self.lora_A[adapter_name].loraA[i].mlp.weight, mean=0.0, std=0.01)
                 nn.init.zeros_(self.lora_B[adapter_name].loraB[i].mlp.weight)
+
+
+
 
 
 class SAMELinear(nn.Linear, SAMELayer):
@@ -262,12 +274,11 @@ class SAMELinear(nn.Linear, SAMELayer):
             training=train_signal, layer_id=layer_id,
         )
 
-        self.delta = 0.95
         self.max_components = 64
         self.window_size = 3
         self.training_signal = train_signal
 
-        self.router = np.array([1,1,1,1,1,1,1,1])
+        self.router = np.array([1,1,1,1,1,1])
         self.lora_router = nn.ModuleDict({adapter_name: SAMEExpert(self.in_features, self.expert_num)})
 
         self.weight.requires_grad = False
@@ -294,9 +305,10 @@ class SAMELinear(nn.Linear, SAMELayer):
         self.router_scaling_factor = 0.2
         self.expert_scaling_factor = 1e-3
         self.perp_suppression_factor = 1-self.expert_scaling_factor
-        
-
+        self.curvature_mu=0.9
+        self.tau_score=0.1
         self._register_same_hooks(adapter_name)
+
     def merge(self):
         if self.active_adapter not in self.lora_A.keys():
             return
@@ -328,6 +340,10 @@ class SAMELinear(nn.Linear, SAMELayer):
             experts = module_dict[adapter_name].loraA if name == 'loraA' else module_dict[adapter_name].loraB
             for expert_id in range(len(experts)):
                 weight = experts[expert_id].mlp.weight
+                if not weight.requires_grad:
+                    print(f"[WARN] Layer{self.layer_id} Expert{expert_id} {name}.weight requires_grad=False, hook skipped")
+                    assert(0)
+                    continue
                 hook_fn = self._make_curvature_hook(name, expert_id, adapter_name)
                 weight.register_hook(hook_fn)
 
@@ -339,15 +355,28 @@ class SAMELinear(nn.Linear, SAMELayer):
 
         U = getattr(self, f"cov_U_{adapter}")
         S = getattr(self, f"cov_S_{adapter}")
-        k = (S > 1e-6).sum().item()
+            # ✅ 改为能量阈值 0.95
+        energy = S ** 2
+        total_energy = energy.sum()
+        
+        if total_energy == 0:
+            return grad
+        
+        # 计算累积能量占比
+        cumsum = torch.cumsum(energy, dim=0)
+        ratio = cumsum / total_energy
+        
+        # 保留累积能量达到 90% 的方向
+        k = (ratio <= 0.9).sum().item() + 1
+        k = min(k, len(S))  # 确保不越界
+        
         if k == 0:
             return grad
-
 
         V_parallel = U[:, :k] 
         grad_parallel = grad @ V_parallel @ V_parallel.t()
 
-
+        # 按奇异值从大到小累加能量
         S_smooth = torch.zeros_like(S[:k])
         for i in range(k):
             start = max(0, i - self.window_size + 1)
@@ -366,40 +395,176 @@ class SAMELinear(nn.Linear, SAMELayer):
 
 
         return grad_parallel_scaled + grad_perp_suppressed
+    
+    # def _make_curvature_hook(self, name, expert_id, adapter):
+    #     """正交投影到零空间：Lu et al. (AAAI-25) Consistent MoE Prompt"""
+    #     def hook(grad):
+    #         if not self.training or self.cur_task == 0:
+    #             return grad
+            
+    #         cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}")
+    #         if not cov_prev_valid:
+    #             assert(0)
+    #             return grad
+
+    #         device = grad.device
+    #         # U_prev: 协方差矩阵的特征向量 (对应论文中的 V), S_prev: 特征值 (对应奇异值平方)
+    #         U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
+    #         S_prev = getattr(self, f"cov_S_prev_{adapter}").to(device)
+            
+    #         # ✅ 论文方法：基于奇异值阈值确定零空间 (而非能量占比)
+    #         # 找出非零奇异值的最小值
+    #         nonzero_mask = S_prev > 1e-8 * S_prev.max()
+    #         if nonzero_mask.sum() == 0:
+    #             return grad
+    #         lambda_min = S_prev[nonzero_mask].min()
+            
+    #         # 零空间判定阈值 (alpha 通常设为 1e-3)
+    #         alpha = 1e-3
+    #         null_mask = S_prev < (alpha * lambda_min)
+            
+    #         # 获取零空间基向量 V_null (对应论文中的 \tilde{V})
+    #         U_null = U_prev[:, null_mask]
+            
+    #         if U_null.size(1) == 0:
+    #             return grad
+            
+    #         # ✅ 计算投影矩阵 H = V_null @ V_null.T (论文 Eq. 23)
+    #         # 为了效率，直接计算 grad @ H 而不是构造完整矩阵
+    #         grad_t = grad.t()
+    #         # 投影到零空间: grad_proj = U_null @ (U_null.T @ grad_t)
+    #         projected_grad_t = U_null @ (U_null.t() @ grad_t)
+            
+    #         # ✅ 专家松弛约束 (论文 Eq. 21 后文): Delta P = [eta * H + (1-eta) * I] @ Grad
+    #         # 如果是专家参数，应用 eta 松弛 (eta 接近 1，如 0.99)；如果是 Router，eta=1.0
+    #         eta = 0.99 
+    #         scaled_grad_t = eta * projected_grad_t + (1 - eta) * grad_t
+            
+    #         scaled_grad = scaled_grad_t.t()
+
+    #         # 更新梯度
+    #         grad_norm_before = grad.norm().item()
+    #         grad.data.copy_(scaled_grad.data)
+    #         grad_norm_after = grad.norm().item()
+    #             #         grad_norm_after = grad.norm().item()
+
+    #         if grad_norm_before > 1e-10:
+    #             ratio = grad_norm_after / grad_norm_before
+    #             print(f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id},ratio={ratio:.2f}x")
+
+    #         return scaled_grad
+    #     return hook
+    
+    # def _make_curvature_hook(self, name, expert_id, adapter):
+    #     """硬正交投影：保留 95% 能量的方向"""
+    #     def hook(grad):
+    #         if not self.training or self.cur_task == 0:
+    #             return grad
+            
+    #         cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}")
+    #         if not cov_prev_valid:
+    #             assert(0);
+    #             return grad
+
+    #         device = grad.device
+    #         U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
+    #         S_prev = getattr(self, f"cov_S_prev_{adapter}").to(device)
+            
+    #         # ✅ 计算累积能量占比，找到保留的维度数 k
+    #         energy = S_prev ** 2
+    #         total_energy = energy.sum()
+            
+    #         # 计算累积和
+    #         cumsum = torch.cumsum(energy, dim=0)
+    #         ratio = cumsum / total_energy
+            
+    #         # 找到第一个超过 0.9 的位置
+    #         k = (ratio <= 0.9).sum().item() + 1
+    #         k = min(k, len(S_prev))  # 确保不越界
+            
+    #         if k == 0:
+    #             assert(0);
+    #             return grad
+    #         grad_t = grad.t()
+    #         proj_parallel = U_prev[:, :k] @ (U_prev[:, :k].t() @ grad_t)
+    #         proj_perp = grad_t - proj_parallel
+    #         scaled_grad = proj_perp.t()
+    #         grad_norm_before = grad.norm().item()
+    #         grad.data.copy_(scaled_grad.data)
+
+    #         grad_norm_after = grad.norm().item()
+
+    #         # if grad_norm_before > 1e-10:
+    #         #     ratio = grad_norm_after / grad_norm_before
+    #         #     print(f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id} | "
+    #         #           f"k={k}/{len(S_prev)}, ratio={ratio:.2f}x")
+    #         return scaled_grad
+    #     return hook
+    
 
     def _make_curvature_hook(self, name, expert_id, adapter):
         def hook(grad):
             if not self.training or self.cur_task == 0:
                 return grad
-            cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}")
+            cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}", False)
             if not cov_prev_valid:
-                print("Error no prev valid cov!!!")
+                assert(0)
                 return grad
 
             device = grad.device
             U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
             S_prev = getattr(self, f"cov_S_prev_{adapter}").to(device)
             
-            k = (S_prev > 1e-6).sum().item()
-            if k == 0:
+            # 1. 确定有效秩 k（能量阈值法）
+            energy = S_prev ** 2
+            total_energy = energy.sum()
+            if total_energy < 1e-10:
+                assert(0)
                 return grad
-
-            mu = 1e-3
-            inv_S = torch.clamp(1.0 / (S_prev[:k] + mu), min=1-self.expert_scaling_factor, max=1+self.expert_scaling_factor)
-
-            grad_t = grad.t()
+                
+            cumsum = torch.cumsum(energy, dim=0)
+            ratio = cumsum / (total_energy + 1e-10)
+            k = (ratio <= 0.9).sum().item() + 1
+            k = max(1, min(k, len(S_prev)))  # ✅ 确保 1 ≤ k ≤ len(S_prev)
             
-            proj_parallel = U_prev[:, :k] @ (torch.diag(inv_S) @ (U_prev[:, :k].t() @ grad_t))
-            proj_perp = grad_t - U_prev[:, :k] @ (U_prev[:, :k].t() @ grad_t)
-            proj_perp_scaled = proj_perp * (1.0 + self.expert_scaling_factor)
+            # 2. 曲率感知缩放因子
+            mu = self.curvature_mu  # 建议设为 1e-3
+            inv_S = 1.0 / (S_prev[:k] + mu)      # 平行方向缩放
+            perp_scale = 1.0 / mu                 # 垂直方向缩放
             
+            # 3. 梯度投影与缩放
+            grad_t = grad.t()  # [d_in, d_out]
+            U_k = U_prev[:, :k]  # [d_in, k]
+            
+            # 平行分量: V_k @ diag(inv_S) @ V_k.T @ grad.T
+            proj_parallel = U_k @ (torch.diag(inv_S) @ (U_k.t() @ grad_t))
+            
+            # 垂直分量: (1/μ) * (I - V_k @ V_k.T) @ grad.T
+            proj_perp = grad_t - U_k @ (U_k.t() @ grad_t)
+            proj_perp_scaled = proj_perp * perp_scale
+            
+            # 4. 合并并返回
             scaled_grad_t = proj_parallel + proj_perp_scaled
+
+            grad_norm_before = grad.norm().item()
             scaled_grad = scaled_grad_t.t()
+
+            grad.data.copy_(scaled_grad.data)
+            grad_norm_after = grad.norm().item()
+
+            if  grad_norm_before > 1e-10 and int(expert_id)!=self.cur_task:
+                print(f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id} | "
+                    f"k={k}/{len(S_prev)}, mu={mu:.1e} | "
+                    f"grad_norm: {grad_norm_before:.4f} → {grad_norm_after:.4f} "
+                    f"(ratio={grad_norm_after/grad_norm_before:.2f}x)")
             return scaled_grad
         return hook
     
+
+    
     def _apply_topk_sparsification(self, router_probs, router, k=2):
         probs = router_probs * (router ** 2)
+        #probs = router_probs
         probs = probs / (probs.sum() + 1e-8)
         if k < self.expert_num:
             topk_vals, topk_idx = torch.topk(probs, k)
@@ -411,7 +576,6 @@ class SAMELinear(nn.Linear, SAMELayer):
         return final_probs
     
     def forward(self, x: torch.Tensor, **kwargs):
-        assert(0)
         previous_dtype = x.dtype
         if self.active_adapter not in self.lora_A.keys():
             return F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
@@ -432,14 +596,16 @@ class SAMELinear(nn.Linear, SAMELayer):
                 g_phi_mean = self._get_masked_routing(g_phi_mean)
                 final_routing=g_phi_mean
             else:
-                router_logits = self.lora_router[self.active_adapter](x.view(-1, x.size(-1)))
+                router_logits = self.lora_router[self.active_adapter](x.view(-1, x.size(-1)))/self.expert_num
                 g_phi = F.softmax(router_logits, dim=-1)
                 g_phi_mean = g_phi.mean(dim=0)
-                final_routing = self._apply_topk_sparsification(g_phi_mean, self.router, k=2)
+                final_routing = self._apply_topk_sparsification(g_phi_mean, self.router, k=1)
+            
             final_routing = final_routing.to(self.lora_A[self.active_adapter].loraA[0].weight.dtype)
             lora_a_output = self.lora_A[self.active_adapter](x, final_routing)
             lora_b_output = self.lora_B[self.active_adapter](lora_a_output, final_routing)
             result += lora_b_output * self.scaling[self.active_adapter]
+
         else:
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
         result = result.to(previous_dtype)
@@ -447,8 +613,8 @@ class SAMELinear(nn.Linear, SAMELayer):
         if self.training:
             self.current_step += 1
             with torch.no_grad():
+                self._update_activation_metrics(g_phi, x.view(-1, x.size(-1)))
                 if not self.all_frozen:
-                    self._update_activation_metrics(g_phi, x.view(-1, x.size(-1)))
                     self._apply_adaptive_freezing()
 
         return result
@@ -509,22 +675,18 @@ class SAMELinear(nn.Linear, SAMELayer):
     def _apply_adaptive_freezing(self):
         adapter = self.active_adapter
         scores = self._compute_activation_scores(adapter)
-        tau_score = 0.8
-        
+        tau_score = self.tau_score
         current_task_expert = min(self.cur_task, self.expert_num - 1)
         masks = torch.ones(self.expert_num, device=scores.device)
         low_score_mask = scores < tau_score
+        #make sure a least one expert is activate
         low_score_mask[current_task_expert] = False
         masks[low_score_mask] = 0.0
-
         other_experts_mask = torch.ones(self.expert_num, dtype=torch.bool, device=scores.device)
         other_experts_mask[current_task_expert] = False
         all_other_frozen = low_score_mask[other_experts_mask].all()
-        
         if all_other_frozen:
-            masks[current_task_expert] = 1.0
             self.all_frozen = True
-        
         setattr(self, f"expert_masks_{adapter}", masks.detach())
 
     def _compute_activation_scores(self, adapter):
@@ -557,7 +719,6 @@ class SAMELinear(nn.Linear, SAMELayer):
             masked_sum = masked.sum(dim=-1, keepdim=True)
         
         return masked / masked_sum
-
 
     def save_task_covariance_snapshot(self, adapter):
         U_curr = getattr(self, f"cov_U_{adapter}").clone()

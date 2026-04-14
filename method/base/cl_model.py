@@ -280,6 +280,14 @@ class CLModel(nn.Module):
     
     def set_task_id(self, task_id: int) -> None:
         self._cl_context.task_id = task_id
+
+    @property
+    def integration(self):
+        return self._integration
+
+    @property
+    def cl_context(self):
+        return self._cl_context
     
     def get_context(self) -> CLContext:
         return self._cl_context

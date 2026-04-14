@@ -6,6 +6,8 @@ HiDe-LLaVA 方法实现
 from method.base.integration import CLIntegration
 from method.base.context import CLContext
 from method.base.hooks import HookManager
+from method.factory import CLMethodFactory
+from method.base.peft_extension import register_peft_extension
 import torch
 import torch.nn.functional as F
 from typing import Any, Dict, Optional, List, Tuple
@@ -13,6 +15,33 @@ import numpy as np
 import os
 
 
+_PEFT_EXT_REGISTERED = False
+
+
+def ensure_peft_extension_registered() -> None:
+    """
+    按需把 HiDe 的 PEFT 扩展注入映射表。
+    这个函数应当在真正需要 HiDe PEFT 的时候调用，避免 import-time 副作用。
+    """
+    global _PEFT_EXT_REGISTERED
+    if _PEFT_EXT_REGISTERED:
+        return
+
+    # 延迟导入，避免提前拉起 PEFT/torch 依赖
+    from PEFT.peft.peft_model import PeftModelForCausalLMLORAMOE
+    from PEFT.peft.tuners.hidellava import HiDeMOELoraConfig, HiDeMOELoraModel
+
+    register_peft_extension(
+        peft_type="MOE_LORA_HiDe",
+        config_cls=HiDeMOELoraConfig,
+        tuner_model_cls=HiDeMOELoraModel,
+        task_type="CAUSAL_LM_HiDe",
+        task_peft_model_cls=PeftModelForCausalLMLORAMOE,
+    )
+    _PEFT_EXT_REGISTERED = True
+
+
+@CLMethodFactory.register("hide_llava", "hide")
 class Hide_llavaIntegration(CLIntegration):
     """
     HiDe-LLaVA 集成类
@@ -124,6 +153,7 @@ class Hide_llavaIntegration(CLIntegration):
     def _setup_hide_lora(self, model):
         """配置 HiDe MOE-LoRA"""
         try:
+            ensure_peft_extension_registered()
             from PEFT.peft import HiDeMOELoraConfig, get_peft_model
             
             target_modules = self._find_target_modules(model)
