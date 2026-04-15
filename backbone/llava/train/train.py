@@ -41,6 +41,14 @@ def rank0_print(*args):
 def train():
     global local_rank
 
+    # run.py passes PYMCIT_LOG_LEVEL in the subprocess env (see cmd_train). Apply early so
+    # third-party imports that configured logging do not leave handlers at INFO/TRAIN-only.
+    import os
+
+    from common.logging import configure_pymcit_logging_from_env
+
+    configure_pymcit_logging_from_env("TRAIN")
+
     model_args, data_args, training_args = load_config()
     local_rank = training_args.local_rank
     model, tokenizer, data_args = load_model_for_train(model_args, data_args, training_args)

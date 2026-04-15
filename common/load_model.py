@@ -15,7 +15,7 @@ from .load_backbone import (
     setup_gradient_checkpointing,
 )
 from .load_checkpoint import load_from_checkpoint
-from .load_config import ModelArguments, DataArguments, TrainingArguments
+from .load_config import ModelArguments, DataArguments, TrainingArguments, merge_method_config_into
 from config.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 import shutil
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
@@ -36,7 +36,8 @@ def _try_import_cl_components():
 # common/load_model.py
 def load_model_for_train(model_args, data_args, training_args):
     """加载用于训练的模型"""
-    
+    merge_method_config_into(model_args)
+
     compute_dtype = torch.bfloat16 if training_args.bf16 else torch.float16 if training_args.fp16 else torch.float32
     bnb_args = setup_quantization(training_args, compute_dtype)
 
@@ -66,7 +67,7 @@ def load_model_for_train(model_args, data_args, training_args):
 
     model.set_tokenizer(tokenizer)
     if hasattr(model, 'set_cur_task'):
-        model.set_cur_task(model_args.cur_task, model_args.expert_num)
+        model.set_cur_task(model_args.cur_task, model_args.task_num)
 
     # ========== 修改 2: CL 包装（包含 HiDe LoRA 注入）==========
     method_name = getattr(model_args, 'method', 'base')
@@ -215,12 +216,16 @@ def load_model_for_inference(
                         def __init__(self, **kw):
                             for k, v in kw.items():
                                 setattr(self, k, v)
+
                     pseudo_args = SimpleArgs(
-                        method=method, 
-                        cur_task=kwargs.get('cur_task', 0),
-                        expert_num=kwargs.get('expert_num', 8),
-                        clip_feature_dim=kwargs.get('clip_feature_dim', 768),
+                        method=method,
+                        cur_task=kwargs.get("cur_task", 0),
+                        task_num=kwargs.get("task_num", kwargs.get("expert_num")),
+                        clip_feature_dim=kwargs.get("clip_feature_dim", 768),
                     )
+                    merge_method_config_into(pseudo_args, method=method)
+                    if getattr(pseudo_args, "task_num", None) is None:
+                        pseudo_args.task_num = 8
                     
                     integration = IntegrationClass(pseudo_args)
                     

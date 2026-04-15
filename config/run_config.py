@@ -11,9 +11,10 @@ TRAIN_DEFAULTS = {
     "benchmark": "ucit",
     "gpus": "0,1",
     "port": 29601,
-    "debug": False,
+    # True → training subprocess gets PYMCIT_LOG_LEVEL=DEBUG (see run.py / train.py). Does not change batch size.
+    "debug": True,
     #same,hide_llava
-    "method": "same",
+    "method": "simple_prompt",
     "app_config": "instruct",
     # If True, mirror logs to console; otherwise write only to files under output/
     "console": False,
@@ -27,12 +28,12 @@ TRAIN_EXTRA_ARGS: list[str] = []
 INFER_DEFAULTS = {
     "benchmark": "ucit",
     "gpus": "0,1",
-    "checkpoint_task": "5",
+    "checkpoint_task": "1",
     "checkpoint_suffix": "_llava_lora",
     "stage": "last",
-    "method": "same",
+    "method": "simple_prompt",
     "app_config": "instruct",
-    "clmethod": "same",
+    "clmethod": "simple_prompt",
     "temperature": "0",
     "conv_mode": "vicuna_v1",
     # If True, mirror logs to console; otherwise write only to files under output/
@@ -41,5 +42,6 @@ INFER_DEFAULTS = {
 
 """
 Note:
-- Train batch sizes are method-specific and live under `config/methods/<method>.py` as TRAIN_BATCH_SIZES.
+- Train batch sizes are method-specific: `config/methods/<method>.py` → `TRAIN_BATCH_SIZES`.
+- Structure: benchmark name (`coin` / `ucit`) → task index (same as `run.py train <id>`): CoIN 0–7, UCIT 0–5.
 """

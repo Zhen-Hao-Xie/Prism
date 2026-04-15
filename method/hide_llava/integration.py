@@ -52,10 +52,9 @@ class Hide_llavaIntegration(CLIntegration):
         super().__init__(config)
         self.hook_manager = HookManager()
         
-        # === HiDe 配置参数 ===
-        self.num_tasks = getattr(config, 'expert_num', 8)
+        # === HiDe 配置参数（任务数；PEFT 内部仍称 expert_num）===
+        self.task_num = int(getattr(config, "task_num", getattr(config, "expert_num", 8)))
         self.feature_dim = getattr(config, 'clip_feature_dim', 768)  # CLIP 特征维度
-        self.expert_num = getattr(config, 'expert_num', 8)
         
         # === 原型存储（任务数 × 特征维度）===
         # 使用 ParameterList 便于保存/加载，但不参与梯度更新
@@ -89,7 +88,7 @@ class Hide_llavaIntegration(CLIntegration):
         if self.image_anchors is None:
             self.image_anchors = torch.nn.ParameterList([
                 torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False)
-                for _ in range(self.num_tasks)
+                for _ in range(self.task_num)
             ]).to(device)
             print(f"  ✅ image_anchors 已初始化（随机）")
         else:
@@ -100,7 +99,7 @@ class Hide_llavaIntegration(CLIntegration):
         if self.text_anchors is None:
             self.text_anchors = torch.nn.ParameterList([
                 torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False)
-                for _ in range(self.num_tasks)
+                for _ in range(self.task_num)
             ]).to(device)
             print(f"  ✅ text_anchors 已初始化（随机）")
         else:
@@ -109,12 +108,12 @@ class Hide_llavaIntegration(CLIntegration):
         if self.image_boundary is None:
             self.image_boundary = torch.nn.ParameterList([
                 torch.nn.Parameter(torch.ones(1, dtype=torch.float32), requires_grad=False)
-                for _ in range(self.num_tasks)
+                for _ in range(self.task_num)
             ]).to(device)
         if self.text_boundary is None:
             self.text_boundary = torch.nn.ParameterList([
                 torch.nn.Parameter(torch.ones(1, dtype=torch.float32), requires_grad=False)
-                for _ in range(self.num_tasks)
+                for _ in range(self.task_num)
             ]).to(device)
         
         # 挂载到模型
@@ -122,7 +121,7 @@ class Hide_llavaIntegration(CLIntegration):
         model.text_anchors = self.text_anchors
         model.image_boundary = self.image_boundary
         model.text_boundary = self.text_boundary
-        model.expert_num = self.expert_num
+        model.task_num = self.task_num
     
         self._setup_hide_lora(model)
 
@@ -148,7 +147,7 @@ class Hide_llavaIntegration(CLIntegration):
         print(f"  可训练比例：{trainable_params / total_params * 100:.4f}%")
         
         print(f"{'='*70}\n")
-        print(f"✅ HiDe 初始化完成 | 任务数：{self.num_tasks} | 特征维度：{self.feature_dim}")
+        print(f"✅ HiDe 初始化完成 | 任务数：{self.task_num} | 特征维度：{self.feature_dim}")
     
     def _setup_hide_lora(self, model):
         """配置 HiDe MOE-LoRA"""
@@ -164,7 +163,7 @@ class Hide_llavaIntegration(CLIntegration):
                 r=getattr(self.config, 'lora_r', 64),
                 lora_alpha=getattr(self.config, 'lora_alpha', 128),
                 lora_dropout=getattr(self.config, 'lora_dropout', 0.05),
-                expert_num=self.expert_num,
+                expert_num=self.task_num,
                 cur_task=getattr(self.config, 'cur_task', 0),
                 task_type="CAUSAL_LM",
             )
@@ -354,7 +353,7 @@ class Hide_llavaIntegration(CLIntegration):
         训练时更新原型（滑动平均）
         公式: anchor_new = (anchor_old * count + feat_sum) / (count + batch_size)
         """
-        if task_id is None or task_id >= self.num_tasks:
+        if task_id is None or task_id >= self.task_num:
             return
             
         batch_size = image_feat.shape[0]
@@ -398,7 +397,7 @@ class Hide_llavaIntegration(CLIntegration):
         device = image_feat.device
         
         text_sims = []
-        for t in range(self.expert_num):
+        for t in range(self.task_num):
             anchor = self.text_anchors[t].to(text_feat.device)
             
             txt_sim = F.cosine_similarity(
@@ -469,13 +468,13 @@ class Hide_llavaIntegration(CLIntegration):
             text_feat = text_feat.to(device)  # 确保在正确的设备上
         
         # 确保 text_anchors 在正确的设备上
-        for t in range(self.expert_num):
+        for t in range(self.task_num):
             if hasattr(self.text_anchors[t], 'to'):
                 self.text_anchors[t] = self.text_anchors[t].to(device)
         
         # 预测任务（仅文本相似度）
         text_sims = []
-        for t in range(self.expert_num):
+        for t in range(self.task_num):
             # 确保两个 tensor 在同一设备
             text_feat_device = text_feat.device
             anchor_device = self.text_anchors[t].device
@@ -517,15 +516,15 @@ class Hide_llavaIntegration(CLIntegration):
     def get_inference_config(self) -> Dict:
         """返回推理时需要的配置"""
         return {
-            'expert_num': self.expert_num,
-            'feature_dim': self.feature_dim,
-            'task_to_category': self.task_to_category,
-            'category_to_tasks': self.category_to_tasks,
+            "task_num": self.task_num,
+            "feature_dim": self.feature_dim,
+            "task_to_category": self.task_to_category,
+            "category_to_tasks": self.category_to_tasks,
         }
     
 
     # method/hide_llava/integration.py
-    def save_extra_state(self, output_dir: str):
+    def save_extra_state(self, output_dir: str, model=None):
         """保存 HiDe 特定状态（所有任务的原型）"""
         import os
         import torch
@@ -561,9 +560,9 @@ class Hide_llavaIntegration(CLIntegration):
             state['text_boundary'] = [p.cpu().clone() for p in self.text_boundary]
             print(f"  ✅ text_boundary: {len(self.text_boundary)} 个任务")
         
-        # 保存元数据
-        state['expert_num'] = self.expert_num
-        state['num_tasks'] = self.num_tasks
+        # 保存元数据（保留 expert_num 键以兼容旧 checkpoint 读取逻辑）
+        state["task_num"] = self.task_num
+        state["expert_num"] = self.task_num
         state['_last_predicted_task_id'] = self._last_predicted_task_id
         
         # 保存为单独文件

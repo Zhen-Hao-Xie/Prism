@@ -54,9 +54,9 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         self.training = False
 
 
-    def set_cur_task(self, cur_task, expert_num):
+    def set_cur_task(self, cur_task, task_num):
         self.cur_task = cur_task
-        self.expert_num = expert_num
+        self.task_num = task_num
 
     def get_model(self):
         return self.model

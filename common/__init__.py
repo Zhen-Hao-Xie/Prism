@@ -1,4 +1,4 @@
-from .load_config import ModelArguments, DataArguments, TrainingArguments, load_config
+from .load_config import ModelArguments, DataArguments, TrainingArguments, load_config, merge_method_config_into
 from .load_model import load_model_for_train, load_model_for_inference
 from .load_checkpoint import load_from_checkpoint  # 统一接口
 from .save_checkpoint import save_model

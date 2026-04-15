@@ -300,7 +300,6 @@ def _build_train_command(
     *,
     gpus: str,
     port: int,
-    debug: bool,
     method: str,
     paths: dict,
     batch_size: int,
@@ -320,7 +319,7 @@ def _build_train_command(
         "128",
         "--mm_projector_lr",
         "2e-5",
-        "--expert_num",
+        "--task_num",
         "8",
         "--model_name_or_path",
         paths["BASE_MODEL_PATH"],
@@ -358,9 +357,9 @@ def _build_train_command(
         "--num_train_epochs",
         "1",
         "--per_device_train_batch_size",
-        str(1 if debug else batch_size),
+        str(int(batch_size)),
         "--per_device_eval_batch_size",
-        str(1 if debug else batch_size),
+        str(int(batch_size)),
         "--gradient_accumulation_steps",
         "1",
         "--evaluation_strategy",
@@ -637,14 +636,31 @@ def cmd_train(args: argparse.Namespace) -> int:
     for task_id in task_ids:
         task = _get_task_config(args.benchmark, task_id)
         bs = None
+        bench_bs: dict = {}
         if isinstance(batch_sizes, dict):
-            bs = (batch_sizes.get(args.benchmark) or {}).get(task_id)
+            raw_bs = batch_sizes.get(args.benchmark)
+            if isinstance(raw_bs, dict):
+                bench_bs = raw_bs
+                bs = bench_bs.get(task_id)
         if bs is None:
             bs = task.get("batch_size")
         if bs is None:
+            try:
+                from config.benchmarks import BENCHMARKS
+
+                n_tasks = len(BENCHMARKS.get(args.benchmark, []))
+            except Exception:
+                n_tasks = 0
+            keys_hint = sorted(bench_bs.keys()) if bench_bs else []
+            idx_range = f"0..{n_tasks - 1}" if n_tasks > 0 else "?"
             raise SystemExit(
-                f"Missing batch_size for benchmark={args.benchmark} task={task_id}. "
-                f"Set in config/run_config.py TRAIN_BATCH_SIZES."
+                f"Missing batch_size for benchmark={args.benchmark!r} task_id={task_id!r} "
+                f"(method={args.method!r}). "
+                f"Define TRAIN_BATCH_SIZES['{args.benchmark}'][{task_id}] in "
+                f"config/methods/{args.method}.py "
+                f"(this benchmark has {n_tasks} tasks, indices {idx_range}; "
+                f"configured keys for this benchmark: {keys_hint}). "
+                f"Alternatively set 'batch_size' on the task in config/benchmarks/*."
             )
         # ==== Method-aware checkpoint layout ====
         # Override task output_dir / previous_task to include method subdir.
@@ -681,7 +697,6 @@ def cmd_train(args: argparse.Namespace) -> int:
                 task,
                 gpus=args.gpus,
                 port=args.port,
-                debug=args.debug,
                 method=args.method,
                 paths=paths,
                 batch_size=int(bs),

@@ -102,7 +102,7 @@ def _save_cl_extra_state(model, output_dir: str):
         print(f"🔍 找到 _integration 属性")
         try:
             if hasattr(model._integration, 'save_extra_state'):
-                success = model._integration.save_extra_state(output_dir)
+                success = model._integration.save_extra_state(output_dir, model=model)
                 if success:
                     print(f"✅ CL 特定状态已通过 _integration 保存")
                     saved = True
@@ -120,7 +120,7 @@ def _save_cl_extra_state(model, output_dir: str):
                 integration = getattr(model, attr_name)
                 try:
                     if hasattr(integration, 'save_extra_state'):
-                        success = integration.save_extra_state(output_dir)
+                        success = integration.save_extra_state(output_dir, model=model)
                         if success:
                             print(f"✅ CL 特定状态已通过 {attr_name} 保存")
                             saved = True

@@ -4,7 +4,7 @@ Defaults for method: same
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "same",
-    "--expert_num": "8",
+    "--task_num": "8",
     "--lora_r": "64",
     "--lora_alpha": "128",
     "--mm_projector_lr": "2e-5",
@@ -27,7 +27,7 @@ INFER_DEFAULTS = {
     "batch_size": 12,
 }
 
-# Per-method batch sizes: benchmark -> task_id -> batch_size
+# Keys = task index in config/benchmarks/* (``run.py train <id>``). CoIN: 0–7, UCIT: 0–5.
 TRAIN_BATCH_SIZES = {
     "coin": {
         0: 12,
@@ -38,12 +38,20 @@ TRAIN_BATCH_SIZES = {
         5: 12,
         6: 12,
         7: 12,
-    }
+    },
+    "ucit": {
+        0: 12,
+        1: 12,
+        2: 12,
+        3: 12,
+        4: 12,
+        5: 12,
+    },
 }
 
 # Method parameters (was in same.yaml)
 METHOD_CONFIG = {
-    "expert_num": 8,
+    "task_num": 8,
     "clip_feature_dim": 768,
     "cur_task": 0,
     "lora_r": 64,

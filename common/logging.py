@@ -43,6 +43,37 @@ def set_log_level(level: str) -> None:
         root.setLevel(getattr(logging, lvl, logging.INFO))
 
 
+def configure_pymcit_logging_from_env(default_when_unset: str = "TRAIN") -> str:
+    """
+    Normalize ``PYMCIT_LOG_LEVEL`` on ``os.environ`` and apply it to the stdlib root logger.
+
+    Training / HF often install handlers before this runs (e.g. at INFO). For ``DEBUG`` we
+    lower existing handlers and strip ``_ProjectLevelFilter`` so ``logging.getLogger(...).debug``
+    (e.g. ``method.simple_prompt.integration``) actually reaches stderr / tee logs.
+    """
+    level = str(os.environ.get("PYMCIT_LOG_LEVEL", default_when_unset)).strip().upper()
+    os.environ["PYMCIT_LOG_LEVEL"] = level
+    root = logging.getLogger()
+    set_log_level(level)
+    if level != "DEBUG":
+        return level
+    fmt = logging.Formatter("%(levelname)s:%(name)s:%(message)s")
+    if not root.handlers:
+        h = logging.StreamHandler(sys.stderr)
+        h.setLevel(logging.DEBUG)
+        h.setFormatter(fmt)
+        root.addHandler(h)
+    else:
+        for h in root.handlers:
+            h.setLevel(logging.DEBUG)
+            if h.formatter is None:
+                h.setFormatter(fmt)
+            for f in list(getattr(h, "filters", []) or []):
+                if isinstance(f, _ProjectLevelFilter):
+                    h.removeFilter(f)
+    return level
+
+
 class _ProjectLevelFilter(logging.Filter):
     """
     Filter that maps our custom levels onto a simple threshold.

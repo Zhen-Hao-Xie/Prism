@@ -109,7 +109,7 @@ class CLIntegration(ABC):
         返回推理时需要的配置
         """
         pass
-    def save_extra_state(self, output_dir: str) -> bool:
+    def save_extra_state(self, output_dir: str, model=None) -> bool:
         """
         保存方法特定状态（原型、anchors、Gram 矩阵等）
         
@@ -118,6 +118,7 @@ class CLIntegration(ABC):
         
         Args:
             output_dir: 输出目录
+            model: 可选，当前训练/保存时的 CL 包装模型（部分方法用于读取 PEFT 等权重）
             
         Returns:
             bool: 是否保存成功

@@ -43,7 +43,7 @@ class SameIntegration(CLIntegration):
     def __init__(self, config: Any):
         super().__init__(config)
 
-        self.expert_num: int = int(getattr(config, "expert_num", 8))
+        self.task_num: int = int(getattr(config, "task_num", getattr(config, "expert_num", 8)))
         self.feature_dim: int = int(getattr(config, "clip_feature_dim", 768))
         self.cur_task: int = int(getattr(config, "cur_task", 0))
         self.temparature: float = float(getattr(config, "temparature", 2.0))
@@ -75,19 +75,19 @@ class SameIntegration(CLIntegration):
         # init anchors
         if self.image_anchors is None:
             self.image_anchors = torch.nn.ParameterList(
-                [torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False) for _ in range(self.expert_num)]
+                [torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False) for _ in range(self.task_num)]
             ).to(device)
         if self.text_anchors is None:
             self.text_anchors = torch.nn.ParameterList(
-                [torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False) for _ in range(self.expert_num)]
+                [torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False) for _ in range(self.task_num)]
             ).to(device)
         if self.image_boundary is None:
             self.image_boundary = torch.nn.ParameterList(
-                [torch.nn.Parameter(torch.ones(1, dtype=torch.float32), requires_grad=False) for _ in range(self.expert_num)]
+                [torch.nn.Parameter(torch.ones(1, dtype=torch.float32), requires_grad=False) for _ in range(self.task_num)]
             ).to(device)
         if self.text_boundary is None:
             self.text_boundary = torch.nn.ParameterList(
-                [torch.nn.Parameter(torch.ones(1, dtype=torch.float32), requires_grad=False) for _ in range(self.expert_num)]
+                [torch.nn.Parameter(torch.ones(1, dtype=torch.float32), requires_grad=False) for _ in range(self.task_num)]
             ).to(device)
 
         # attach to model for checkpoint save/load convenience
@@ -95,6 +95,7 @@ class SameIntegration(CLIntegration):
         model.text_anchors = self.text_anchors
         model.image_boundary = self.image_boundary
         model.text_boundary = self.text_boundary
+        model.task_num = self.task_num
 
         self._setup_same_lora(model)
 
@@ -115,7 +116,7 @@ class SameIntegration(CLIntegration):
             r=int(getattr(self.config, "lora_r", 64)),
             lora_alpha=int(getattr(self.config, "lora_alpha", 128)),
             lora_dropout=float(getattr(self.config, "lora_dropout", 0.05)),
-            expert_num=self.expert_num,
+            expert_num=self.task_num,
             cur_task=int(getattr(self.config, "cur_task", self.cur_task)),
             task_type="CAUSAL_LM",
         )
@@ -252,7 +253,7 @@ class SameIntegration(CLIntegration):
         image_feat, text_feat = self._extract_clip_features(model, images, input_ids, clip_tokenizer, text_tower)
         device = text_feat.device
 
-        if model.training and context.task_id is not None and 0 <= int(context.task_id) < self.expert_num:
+        if model.training and context.task_id is not None and 0 <= int(context.task_id) < self.task_num:
             tid = int(context.task_id)
             bs = int(text_feat.shape[0])
             with torch.no_grad():
@@ -268,20 +269,20 @@ class SameIntegration(CLIntegration):
                 self.text_anchors[tid].data.copy_((oldt * cntt + text_feat.sum(dim=0)) / new_cntt)
                 self.text_boundary[tid].data.copy_(new_cntt)
 
-            routing = torch.zeros(self.expert_num, device=device, dtype=torch.float32)
+            routing = torch.zeros(self.task_num, device=device, dtype=torch.float32)
             routing[tid] = 1.0
             self._propagate_routing(model, routing)
             return
 
         text_sims = []
-        for t in range(self.expert_num):
+        for t in range(self.task_num):
             ta = self.text_anchors[t].to(device)
             text_sims.append(F.cosine_similarity(text_feat.unsqueeze(1), ta.unsqueeze(0), dim=2).max())
         text_sims_t = torch.stack(text_sims).to(device=device, dtype=torch.float32)
 
         if image_feat is not None:
             image_sims = []
-            for t in range(self.expert_num):
+            for t in range(self.task_num):
                 ia = self.image_anchors[t].to(device)
                 image_sims.append(F.cosine_similarity(image_feat.unsqueeze(1), ia.unsqueeze(0), dim=2).max())
             image_sims_t = torch.stack(image_sims).to(device=device, dtype=torch.float32)
@@ -324,7 +325,7 @@ class SameIntegration(CLIntegration):
                 module.save_task_covariance_snapshot(adapter)
 
     def get_inference_config(self) -> Dict:
-        return {"expert_num": self.expert_num, "feature_dim": self.feature_dim}
+        return {"task_num": self.task_num, "feature_dim": self.feature_dim}
 
     def _sync_anchor_attrs_to_model(self, model: Any) -> None:
         """保证 CLModel 上的属性与 integration 内 ParameterList 同一引用（与 initialize_model 一致）。"""
@@ -339,7 +340,7 @@ class SameIntegration(CLIntegration):
         if self.text_boundary is not None:
             object.__setattr__(model, "text_boundary", self.text_boundary)
 
-    def save_extra_state(self, output_dir: str) -> bool:
+    def save_extra_state(self, output_dir: str, model=None) -> bool:
         os.makedirs(output_dir, exist_ok=True)
         same_state: Dict[str, Any] = {}
 
