@@ -240,10 +240,10 @@ def load_model_for_inference(
                     
                     # 加载 HiDe 状态（anchors 等）
                     if hasattr(integration, 'load_extra_state'):
-                        print(f"🔧 从 hide_state.pt 加载 HiDe 状态...")
+                        print(f"🔧 加载额外状态...")
                         success = integration.load_extra_state(model_path, model=model)
                         if success:
-                            print(f"✅ HiDe 状态已加载 | anchors 可用：{hasattr(model, 'image_anchors')}")
+                            print(f"额外状态加载成功：{hasattr(model, 'image_anchors')}")
             else:
                 # 非 CL 方法：手动加载（原有逻辑）
                 assert(0)

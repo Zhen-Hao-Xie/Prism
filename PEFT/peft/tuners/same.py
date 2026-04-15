@@ -278,7 +278,7 @@ class SAMELinear(nn.Linear, SAMELayer):
         self.window_size = 3
         self.training_signal = train_signal
 
-        self.router = np.array([1,1,1,1,1,1])
+        self.router = torch.ones(self.expert_num)  
         self.lora_router = nn.ModuleDict({adapter_name: SAMEExpert(self.in_features, self.expert_num)})
 
         self.weight.requires_grad = False
@@ -563,7 +563,7 @@ class SAMELinear(nn.Linear, SAMELayer):
 
     
     def _apply_topk_sparsification(self, router_probs, router, k=2):
-        probs = router_probs * (router ** 2)
+        probs = router_probs * (router.to(router_probs.device) ** 2)
         #probs = router_probs
         probs = probs / (probs.sum() + 1e-8)
         if k < self.expert_num:

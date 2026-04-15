@@ -29,10 +29,10 @@ INFER_DEFAULTS = {
     "gpus": "0,1",
     "checkpoint_task": "5",
     "checkpoint_suffix": "_llava_lora",
-    "stage": "MoELoRA",
-    "method": "hide_llava",
+    "stage": "last",
+    "method": "same",
     "app_config": "instruct",
-    "clmethod": "hide_llava",
+    "clmethod": "same",
     "temperature": "0",
     "conv_mode": "vicuna_v1",
     # If True, mirror logs to console; otherwise write only to files under output/

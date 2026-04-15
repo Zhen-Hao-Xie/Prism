@@ -30,14 +30,14 @@ INFER_DEFAULTS = {
 # Per-method batch sizes: benchmark -> task_id -> batch_size
 TRAIN_BATCH_SIZES = {
     "coin": {
-        0: 6,
-        1: 6,
-        2: 6,
-        3: 6,
-        4: 6,
-        5: 6,
-        6: 6,
-        7: 6,
+        0: 12,
+        1: 12,
+        2: 12,
+        3: 12,
+        4: 12,
+        5: 12,
+        6: 12,
+        7: 12,
     }
 }
 

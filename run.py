@@ -748,13 +748,13 @@ def cmd_infer(args: argparse.Namespace) -> int:
     for task_id in task_ids:
         task = _get_task_config(args.benchmark, task_id)
 
+        # output/infer/<benchmark>/<clmethod>/ — 与 checkpoint 的 --method 解耦，按实际推理方法分目录
         log_path = (
             PROJECT_ROOT
             / "output"
             / "infer"
-            / "text"
-            / args.method
             / args.benchmark
+            / args.clmethod
             / f"{y}_to_{task_id}_{stamp}.txt"
         )
 
@@ -806,7 +806,8 @@ def cmd_infer(args: argparse.Namespace) -> int:
         try:
             _log_line("=" * 60, log_file=log_path, mirror=mirror, lock=log_lock)
             _log_line(
-                f"INFER method={args.method} benchmark={args.benchmark} y={y} -> x={task_id}",
+                f"INFER benchmark={args.benchmark} clmethod={args.clmethod} "
+                f"(checkpoint group method={args.method}) y={y} -> x={task_id}",
                 log_file=log_path,
                 mirror=mirror,
                 lock=log_lock,

@@ -1,5 +1,5 @@
 # 内部开发指南
-Update by tjt
+Updated by tjt
 
 ## Part 1. 如何运行（训练 / 推理 / 如何改配置参数）
 

@@ -5,7 +5,7 @@ SAME 方法实现（集成到 CLIntegration 生命周期）。
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -212,9 +212,22 @@ class SameIntegration(CLIntegration):
         routing = routing / (routing.sum() + 1e-8)
         return routing
 
+    def _clip_tokenizer_and_text_tower(self, model: Any) -> Tuple[Optional[Any], Optional[Any]]:
+        clip_tokenizer = getattr(model, "clip_tokenizer", None)
+        text_tower = getattr(model, "text_tower", None)
+        _base_model = getattr(model, "_base_model", None)
+        if _base_model is not None:
+            clip_tokenizer = clip_tokenizer or getattr(_base_model, "clip_tokenizer", None)
+            text_tower = text_tower or getattr(_base_model, "text_tower", None)
+            if hasattr(_base_model, "base_model"):
+                clip_tokenizer = clip_tokenizer or getattr(_base_model.base_model, "clip_tokenizer", None)
+                text_tower = text_tower or getattr(_base_model.base_model, "text_tower", None)
+        return clip_tokenizer, text_tower
+
     def _propagate_routing(self, model, routing: torch.Tensor) -> None:
         routing = routing.detach()
         self._last_routing = routing
+
         for module in model.modules():
             if module.__class__.__name__ == "SAMELinear":
                 target_len = int(getattr(module, "expert_num", routing.numel()))
@@ -226,24 +239,11 @@ class SameIntegration(CLIntegration):
                     routed = routed / (routed.sum() + 1e-8)
                 module.router = routed.to(device=next(module.parameters()).device, dtype=torch.float32)
 
-    def on_input_prep(self, model, args: tuple, kwargs: dict, context: CLContext) -> None:
-        images = kwargs.get("images", None)
-        input_ids = args[0] if args else None
-
-        clip_tokenizer = getattr(model, "clip_tokenizer", None)
-        text_tower = getattr(model, "text_tower", None)
-        if clip_tokenizer is None or text_tower is None:
-            _base_model = getattr(model, "_base_model", None)
-            if _base_model is not None:
-                clip_tokenizer = clip_tokenizer or getattr(_base_model, "clip_tokenizer", None)
-                text_tower = text_tower or getattr(_base_model, "text_tower", None)
-            if _base_model is not None and hasattr(_base_model, "base_model"):
-                clip_tokenizer = clip_tokenizer or getattr(_base_model.base_model, "clip_tokenizer", None)
-                text_tower = text_tower or getattr(_base_model.base_model, "text_tower", None)
+    def _apply_same_routing(self, model: Any, images: Any, input_ids: Any, context: CLContext) -> None:
+        clip_tokenizer, text_tower = self._clip_tokenizer_and_text_tower(model)
         if clip_tokenizer is None or text_tower is None:
             return
 
-        # 增量解码阶段复用上一步路由
         if input_ids is None or (hasattr(input_ids, "shape") and input_ids.shape[1] <= 1):
             if self._last_routing is not None:
                 self._propagate_routing(model, self._last_routing)
@@ -252,7 +252,6 @@ class SameIntegration(CLIntegration):
         image_feat, text_feat = self._extract_clip_features(model, images, input_ids, clip_tokenizer, text_tower)
         device = text_feat.device
 
-        # training: update anchors with current task id if available
         if model.training and context.task_id is not None and 0 <= int(context.task_id) < self.expert_num:
             tid = int(context.task_id)
             bs = int(text_feat.shape[0])
@@ -274,7 +273,6 @@ class SameIntegration(CLIntegration):
             self._propagate_routing(model, routing)
             return
 
-        # inference: 文本+图像相似度融合（迁移自 same_llava_arch）
         text_sims = []
         for t in range(self.expert_num):
             ta = self.text_anchors[t].to(device)
@@ -293,6 +291,16 @@ class SameIntegration(CLIntegration):
 
         routing = self._routing_from_sims(sims_t)
         self._propagate_routing(model, routing)
+
+    def on_input_prep(self, model, args: tuple, kwargs: dict, context: CLContext) -> None:
+        images = kwargs.get("images", None)
+        input_ids = args[0] if args else None
+        self._apply_same_routing(model, images, input_ids, context)
+
+    def pre_generate_hook(self, model: Any, input_ids: Any, images: Any, context: CLContext) -> bool:
+        """在 CLModel.generate 转调 _base_model 之前完成路由，避免推理绕过 prepare_inputs/on_input_prep。"""
+        self._apply_same_routing(model, images, input_ids, context)
+        return True
 
     def on_forward_start(self, model, context: CLContext) -> None:
         return
@@ -318,96 +326,161 @@ class SameIntegration(CLIntegration):
     def get_inference_config(self) -> Dict:
         return {"expert_num": self.expert_num, "feature_dim": self.feature_dim}
 
+    def _sync_anchor_attrs_to_model(self, model: Any) -> None:
+        """保证 CLModel 上的属性与 integration 内 ParameterList 同一引用（与 initialize_model 一致）。"""
+        if model is None:
+            return
+        if self.image_anchors is not None:
+            object.__setattr__(model, "image_anchors", self.image_anchors)
+        if self.text_anchors is not None:
+            object.__setattr__(model, "text_anchors", self.text_anchors)
+        if self.image_boundary is not None:
+            object.__setattr__(model, "image_boundary", self.image_boundary)
+        if self.text_boundary is not None:
+            object.__setattr__(model, "text_boundary", self.text_boundary)
+
     def save_extra_state(self, output_dir: str) -> bool:
         os.makedirs(output_dir, exist_ok=True)
+        same_state: Dict[str, Any] = {}
 
-        if self._model_ref is None:
-            return False
+        if self.image_anchors is not None:
+            same_state["image_anchors"] = [p.detach().cpu().clone() for p in self.image_anchors]
+        if self.text_anchors is not None:
+            same_state["text_anchors"] = [p.detach().cpu().clone() for p in self.text_anchors]
+        if self.image_boundary is not None:
+            same_state["image_boundary"] = [p.detach().cpu().clone() for p in self.image_boundary]
+        if self.text_boundary is not None:
+            same_state["text_boundary"] = [p.detach().cpu().clone() for p in self.text_boundary]
 
-        same_state = {}
-        # 注意：CLModel 会把底层模型挂在 `_base_model` 下，
-        # 直接用 named_buffers() 会产生带 `_base_model.` 前缀的 key。
-        # 这里优先从真实可训练模型上取 buffers，避免保存出的 key 在加载时对不上。
-        model_for_buffers = getattr(self._model_ref, "_base_model", None) or self._model_ref
-        for name, buf in model_for_buffers.named_buffers():
-            if any(k in name for k in ("cov_U_prev", "cov_S_prev", "importance", "cov_prev_valid")):
-                same_state[name] = buf.detach().cpu().clone()
+        if self._model_ref is not None:
+            model_for_buffers = getattr(self._model_ref, "_base_model", None) or self._model_ref
+            for name, buf in model_for_buffers.named_buffers():
+                if any(k in name for k in ("cov_U_prev", "cov_S_prev", "importance", "cov_prev_valid")):
+                    same_state[name] = buf.detach().cpu().clone()
+
         if not same_state:
             return False
 
-        # 与原 same_train.py 对齐的命名
         torch.save(same_state, os.path.join(output_dir, "same_state.bin"))
         return True
 
     def load_extra_state(self, load_dir: str, model=None) -> bool:
-        # 优先兼容 same_train.py 产物
-        candidates = [
-            os.path.join(load_dir, "same_state.bin"),
-            os.path.join(load_dir, "same_state.pt"),
-        ]
-        p = next((x for x in candidates if os.path.exists(x)), None)
-        if p is None:
+        p = os.path.join(load_dir, "same_state.bin")
+        if not os.path.exists(p):
             return False
 
         state = torch.load(p, map_location="cpu")
-        if model is None or not isinstance(state, dict):
+        if not isinstance(state, dict):
             return False
 
-        # 兼容两种 key:
-        # 1) 直接从底层模型保存：`...`
-        # 2) 从 CLModel 保存：`_base_model....`
         if any(k.startswith("_base_model.") for k in state.keys()):
             state = {k[len("_base_model."):]: v for k, v in state.items()}
 
-        target = getattr(model, "_base_model", None) or model
+        target = getattr(model, "_base_model", None) or model if model is not None else None
 
-        # 关键：不要依赖 load_state_dict 的 key 精确匹配。
-        # SAME 的 buffers 存在于注入后的各层（例如 *.cov_prev_valid_default），不同包装层级会改变前缀。
-        # 这里按 `named_buffers()` 做后缀匹配逐个拷贝，保证 cov_* 真正写入。
-        tracked_buffers = []
         copied = 0
         missing = 0
+        tracked_buffers: List[str] = []
+        state_keys = [k for k in state.keys() if isinstance(k, str)]
 
-        # 为提升性能，先把 state keys 变成 list（避免多次 view/iterator）
-        state_keys = list(state.keys())
+        if target is not None:
+            for buf_name, buf in target.named_buffers():
+                if not any(k in buf_name for k in ("cov_U_prev", "cov_S_prev", "importance", "cov_prev_valid")):
+                    continue
 
-        for buf_name, buf in target.named_buffers():
-            if not any(k in buf_name for k in ("cov_U_prev", "cov_S_prev", "importance", "cov_prev_valid")):
-                continue
+                tracked_buffers.append(buf_name)
 
-            tracked_buffers.append(buf_name)
+                if buf_name in state and isinstance(state[buf_name], torch.Tensor):
+                    buf.data.copy_(state[buf_name].to(dtype=buf.dtype, device=buf.device))
+                    copied += 1
+                    continue
 
-            if buf_name in state:
-                buf.data.copy_(state[buf_name].to(dtype=buf.dtype, device=buf.device))
-                copied += 1
-                continue
+                cands = [k for k in state_keys if k.endswith(buf_name) or buf_name.endswith(k)]
+                if not cands:
+                    missing += 1
+                    continue
+                best = max(cands, key=len)
+                if isinstance(state[best], torch.Tensor):
+                    buf.data.copy_(state[best].to(dtype=buf.dtype, device=buf.device))
+                    copied += 1
 
-            # 后缀匹配（优先最长 key 命中）
-            cands = [k for k in state_keys if k.endswith(buf_name) or buf_name.endswith(k)]
-            if not cands:
-                missing += 1
-                continue
-            # 若 buf_name.endswth(k)，说明 state_key 是更短的“尾部路径”，同样可用
-            best = max(cands, key=len)
-            buf.data.copy_(state[best].to(dtype=buf.dtype, device=buf.device))
-            copied += 1
+        anchors_ok = False
+        if "image_anchors" in state and isinstance(state["image_anchors"], (list, tuple)) and self.image_anchors is not None:
+            for i, p in enumerate(state["image_anchors"]):
+                if i < len(self.image_anchors) and isinstance(p, torch.Tensor):
+                    self.image_anchors[i].data.copy_(p.to(device=self.image_anchors[i].device, dtype=self.image_anchors[i].dtype))
+            anchors_ok = True
+        if "text_anchors" in state and isinstance(state["text_anchors"], (list, tuple)) and self.text_anchors is not None:
+            for i, p in enumerate(state["text_anchors"]):
+                if i < len(self.text_anchors) and isinstance(p, torch.Tensor):
+                    self.text_anchors[i].data.copy_(p.to(device=self.text_anchors[i].device, dtype=self.text_anchors[i].dtype))
+            anchors_ok = True
+        if "image_boundary" in state and isinstance(state["image_boundary"], (list, tuple)) and self.image_boundary is not None:
+            for i, p in enumerate(state["image_boundary"]):
+                if i < len(self.image_boundary) and isinstance(p, torch.Tensor):
+                    self.image_boundary[i].data.copy_(p.to(device=self.image_boundary[i].device, dtype=self.image_boundary[i].dtype))
+            anchors_ok = True
+        if "text_boundary" in state and isinstance(state["text_boundary"], (list, tuple)) and self.text_boundary is not None:
+            for i, p in enumerate(state["text_boundary"]):
+                if i < len(self.text_boundary) and isinstance(p, torch.Tensor):
+                    self.text_boundary[i].data.copy_(p.to(device=self.text_boundary[i].device, dtype=self.text_boundary[i].dtype))
+            anchors_ok = True
 
-        self._model_ref = model
+        if model is not None:
+            self._model_ref = model
+            self._sync_anchor_attrs_to_model(model)
 
-        # 主动验证：如果 cov_prev_valid 仍然全 False，直接报错，避免训练到 hook 才炸
-        cov_valid = []
-        for buf_name, buf in target.named_buffers():
-            if "cov_prev_valid_" in buf_name:
-                try:
-                    cov_valid.append(bool(buf.detach().cpu().item()))
-                except Exception:
-                    pass
+        cov_valid: List[bool] = []
+        if target is not None:
+            for buf_name, buf in target.named_buffers():
+                if "cov_prev_valid_" in buf_name:
+                    try:
+                        cov_valid.append(bool(buf.detach().cpu().item()))
+                    except Exception:
+                        pass
 
-        if cov_valid and sum(cov_valid) == 0:
+        if copied > 0 and cov_valid and sum(cov_valid) == 0:
             raise RuntimeError(
                 f"SAME extra state loaded from {p} but cov_prev_valid remains all False. "
                 f"copied={copied}, missing={missing}, tracked={len(tracked_buffers)}"
             )
 
-        return copied > 0
+        ok = copied > 0 or anchors_ok
+        if ok:
+            self._print_anchors_after_load(p, state)
+        return ok
+
+    def _print_anchors_after_load(self, path: str, state: Dict[str, Any]) -> None:
+        """加载 same_state.bin 后打印 anchors / boundary，便于核对是否从文件恢复。"""
+        anchor_keys = ("image_anchors", "text_anchors", "image_boundary", "text_boundary")
+        keys_in_file = [k for k in anchor_keys if k in state]
+        nonempty_in_file = any(
+            k in state and isinstance(state[k], (list, tuple)) and len(state[k]) > 0 for k in anchor_keys
+        )
+
+        print(f"\n[SAME] same_state.bin 已处理: {path}")
+        print(f"  文件中 anchors 相关键: {keys_in_file if keys_in_file else '(无)'}")
+
+        if self.image_anchors is not None:
+            print("  image_anchors（当前内存，L2 范数）:")
+            for i, p in enumerate(self.image_anchors):
+                n = float(p.detach().float().norm().item())
+                print(f"    expert {i}: {n:.4f}")
+        if self.text_anchors is not None:
+            print("  text_anchors（当前内存，L2 范数）:")
+            for i, p in enumerate(self.text_anchors):
+                n = float(p.detach().float().norm().item())
+                print(f"    expert {i}: {n:.4f}")
+        if self.image_boundary is not None:
+            print("  image_boundary（计数）:")
+            for i, p in enumerate(self.image_boundary):
+                print(f"    expert {i}: {float(p.detach().item()):.4f}")
+        if self.text_boundary is not None:
+            print("  text_boundary（计数）:")
+            for i, p in enumerate(self.text_boundary):
+                print(f"    expert {i}: {float(p.detach().item()):.4f}")
+        if nonempty_in_file:
+            print("  ✅ 文件中包含非空 anchors/boundary 列表，已写入 integration。")
+        else:
+            print("  ⚠️ 文件中无 anchors 数据；上列为 initialize 初值（需训练原型请用新版本重新保存 same_state.bin）。")
 
