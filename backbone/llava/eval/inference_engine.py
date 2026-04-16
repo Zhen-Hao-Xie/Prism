@@ -48,6 +48,8 @@ class InferenceEngine:
             model_name,
             method=args.clmethod,  # ← 关键：传入 method 参数
             text_tower=getattr(args, "text_tower", None),
+            benchmark=getattr(args, "benchmark", None),
+            task_num=getattr(args, "cl_task_num", None),
         )
         return tokenizer, model, image_processor, model_name
 

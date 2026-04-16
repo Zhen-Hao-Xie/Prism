@@ -4,7 +4,6 @@ Defaults for method: same
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "same",
-    "--task_num": "8",
     "--lora_r": "64",
     "--lora_alpha": "128",
     "--mm_projector_lr": "2e-5",
@@ -51,7 +50,6 @@ TRAIN_BATCH_SIZES = {
 
 # Method parameters (was in same.yaml)
 METHOD_CONFIG = {
-    "task_num": 8,
     "clip_feature_dim": 768,
     "cur_task": 0,
     "lora_r": 64,

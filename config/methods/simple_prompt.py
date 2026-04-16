@@ -4,7 +4,6 @@ Defaults for method: simple_prompt
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "simple_prompt",
-    "--task_num": "8",
     "--mm_projector_lr": "2e-5",
     "--num_train_epochs": "1",
     "--learning_rate": "2e-4",
@@ -46,7 +45,6 @@ TRAIN_BATCH_SIZES = {
 }
 
 METHOD_CONFIG = {
-    "task_num": 8,
     "clip_feature_dim": 768,
     "num_prompt_tokens": 256,
 }

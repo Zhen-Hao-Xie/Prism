@@ -8,7 +8,7 @@ def merge_method_config_into(obj: Any, method: Optional[str] = None) -> None:
     将 `config/methods/<method>.py` 里的 `METHOD_CONFIG` 写入 obj：
     - 仅当 obj 上不存在该属性，或当前值为 None 时写入（命令行 / 训练脚本显式传入优先）。
     这样方法专属字段（如 simple_prompt 的 num_prompt_tokens）不必出现在共享的 ModelArguments 里。
-    METHOD_CONFIG 中旧键 expert_num 会映射为 task_num（仅当未提供 task_num 时）。
+    注意：`task_num` / `expert_num` 由 benchmark 决定，见 `merge_benchmark_task_num_into`，此处不再从 METHOD_CONFIG 合并。
     """
     m = (method or getattr(obj, "method", None) or "").strip().lower()
     if not m or m == "base":
@@ -19,10 +19,8 @@ def merge_method_config_into(obj: Any, method: Optional[str] = None) -> None:
         if not isinstance(mc, dict):
             return
         mc = dict(mc)
-        if "task_num" not in mc and "expert_num" in mc:
-            mc["task_num"] = mc["expert_num"]
         for key, val in mc.items():
-            if key == "expert_num":
+            if key in ("expert_num", "task_num"):
                 continue
             if not hasattr(obj, key):
                 setattr(obj, key, val)
@@ -31,6 +29,26 @@ def merge_method_config_into(obj: Any, method: Optional[str] = None) -> None:
                 setattr(obj, key, val)
     except Exception:
         return
+
+
+def merge_benchmark_task_num_into(obj: Any, benchmark: Optional[str] = None) -> None:
+    """
+    当未显式提供 `task_num`（命令行为 None）时，用 `config.benchmarks.BENCHMARK_TASK_NUM[benchmark]` 填充。
+    显式 `--task_num` 优先，不覆盖。
+    """
+    if getattr(obj, "task_num", None) is not None:
+        return
+    bm = (benchmark or getattr(obj, "benchmark", None) or "").strip().lower()
+    if not bm:
+        return
+    try:
+        from config.benchmarks import BENCHMARK_TASK_NUM  # type: ignore
+    except Exception:
+        return
+    n = BENCHMARK_TASK_NUM.get(bm)
+    if n is None:
+        return
+    setattr(obj, "task_num", int(n))
 
 
 @dataclass
@@ -51,10 +69,16 @@ class ModelArguments:
     mm_use_im_patch_token: bool = field(default=True)
     mm_vision_select_feature: Optional[str] = field(default="patch")
     task_embedding_dim: Optional[int] = field(default=64)
+    benchmark: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Benchmark：ucit / coin 等；与任务数一致，用于在未传 --task_num 时自动设置 task_num",
+        },
+    )
     task_num: Optional[int] = field(
         default=None,
         metadata={
-            "help": "持续学习场景下的任务数量；不传时由 config/methods/<method>.py 的 METHOD_CONFIG 补全",
+            "help": "持续学习场景下的任务/专家数量；不传时由 --benchmark 对应 config/benchmarks 中的任务数补全",
         },
     )
     method: str = field(

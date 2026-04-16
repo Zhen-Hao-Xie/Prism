@@ -303,7 +303,15 @@ def _build_train_command(
     method: str,
     paths: dict,
     batch_size: int,
+    benchmark: str,
 ) -> list[str]:
+    from config.benchmarks import BENCHMARK_TASK_NUM  # type: ignore
+
+    bm = (benchmark or "coin").strip().lower()
+    task_num = BENCHMARK_TASK_NUM.get(bm)
+    if task_num is None:
+        raise SystemExit(f"Unknown benchmark {bm!r} for task_num (not in BENCHMARK_TASK_NUM).")
+
     cmd = [
         "deepspeed",
         f"--include=localhost:{gpus}",
@@ -319,8 +327,10 @@ def _build_train_command(
         "128",
         "--mm_projector_lr",
         "2e-5",
+        "--benchmark",
+        bm,
         "--task_num",
-        "8",
+        str(int(task_num)),
         "--model_name_or_path",
         paths["BASE_MODEL_PATH"],
         "--freeze_mm_mlp_adapter",
@@ -448,6 +458,7 @@ def _run_inference_one_chunk(
     temperature: str,
     conv_mode: str,
     batch_size: int,
+    benchmark: str,
 ):
     eval_config = task["eval"]
     method = INFERENCE_METHOD_MAP.get(task["name"], "default")
@@ -479,6 +490,8 @@ def _run_inference_one_chunk(
         str(temperature),
         "--conv-mode",
         str(conv_mode),
+        "--benchmark",
+        str(benchmark),
     ]
     if paths["CLIP_PATH"]:
         cmd.extend(["--text-tower", paths["CLIP_PATH"]])
@@ -503,6 +516,7 @@ def _run_inference_parallel(
     temperature: str,
     conv_mode: str,
     batch_size: int,
+    benchmark: str,
 ):
     chunks = len(gpus)
     print_lock = threading.Lock()
@@ -541,6 +555,8 @@ def _run_inference_parallel(
                 str(temperature),
                 "--conv-mode",
                 str(conv_mode),
+                "--benchmark",
+                str(benchmark),
             ]
             if paths["CLIP_PATH"]:
                 cmd.extend(["--text-tower", paths["CLIP_PATH"]])
@@ -700,6 +716,7 @@ def cmd_train(args: argparse.Namespace) -> int:
                 method=args.method,
                 paths=paths,
                 batch_size=int(bs),
+                benchmark=args.benchmark,
             )
             cmd = _apply_flag_overrides(cmd, flag_overrides)
             cmd = _append_args(cmd, extra_args)
@@ -789,6 +806,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
                 temperature=args.temperature,
                 conv_mode=args.conv_mode,
                 batch_size=infer_bs,
+                benchmark=args.benchmark,
             )
 
             print("\nMerging results...")
@@ -876,6 +894,8 @@ def cmd_infer(args: argparse.Namespace) -> int:
                             str(args.temperature),
                             "--conv-mode",
                             str(args.conv_mode),
+                            "--benchmark",
+                            str(args.benchmark),
                         ]
                         if paths["CLIP_PATH"]:
                             cmd.extend(["--text-tower", paths["CLIP_PATH"]])

@@ -176,7 +176,7 @@ def ensure_peft_extension_registered():
 在 `initialize_model()` 中：
 
 - 冻结 backbone 参数（如需要）
-- 组装 config（r/alpha/dropout/task_num/cur_task/target_modules 等；PEFT 层仍可能使用 `expert_num` 字段名以兼容权重）
+- 组装 config（r/alpha/dropout/cur_task/target_modules 等；`task_num` 由 `--benchmark` 与 `config/benchmarks` 中的任务数对齐；PEFT 层仍可能使用 `expert_num` 字段名以兼容权重）
 - 对 `CLModel` 的 `_base_model` 调用 `get_peft_model(...)` 并回写 `_base_model`
 
 ---

@@ -15,7 +15,13 @@ from .load_backbone import (
     setup_gradient_checkpointing,
 )
 from .load_checkpoint import load_from_checkpoint
-from .load_config import ModelArguments, DataArguments, TrainingArguments, merge_method_config_into
+from .load_config import (
+    ModelArguments,
+    DataArguments,
+    TrainingArguments,
+    merge_benchmark_task_num_into,
+    merge_method_config_into,
+)
 from config.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 import shutil
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
@@ -37,6 +43,13 @@ def _try_import_cl_components():
 def load_model_for_train(model_args, data_args, training_args):
     """加载用于训练的模型"""
     merge_method_config_into(model_args)
+    merge_benchmark_task_num_into(model_args)
+    _m = str(getattr(model_args, "method", "") or "").lower()
+    if _m not in ("", "base", "none") and getattr(model_args, "task_num", None) is None:
+        raise ValueError(
+            "持续学习训练需要 task_num：请在命令行传入 --benchmark（ucit / coin）"
+            "或显式 --task_num；任务数由 config/benchmarks 定义，不再来自 config/methods。"
+        )
 
     compute_dtype = torch.bfloat16 if training_args.bf16 else torch.float16 if training_args.fp16 else torch.float32
     bnb_args = setup_quantization(training_args, compute_dtype)
@@ -135,19 +148,25 @@ import importlib  # ← 在文件顶部添加
 
 # common/load_model.py
 def load_model_for_inference(
-    model_path, 
-    model_base, 
-    model_name, 
-    load_8bit=False, 
-    load_4bit=False, 
-    device_map="auto", 
-    device="cuda", 
-    text_tower=None, 
+    model_path,
+    model_base,
+    model_name,
+    load_8bit=False,
+    load_4bit=False,
+    device_map="auto",
+    device="cuda",
+    text_tower=None,
     method: Optional[str] = None,
+    benchmark: Optional[str] = None,
+    task_num: Optional[int] = None,
     **kwargs
 ):
     """加载用于推理的模型"""
     kwargs = {"device_map": device_map, **kwargs}
+    # 勿传入 HF from_pretrained
+    kwargs.pop("task_num", None)
+    kwargs.pop("expert_num", None)
+    kwargs.pop("benchmark", None)
 
     if device != "cuda":
         kwargs['device_map'] = {"": device}
@@ -220,12 +239,17 @@ def load_model_for_inference(
                     pseudo_args = SimpleArgs(
                         method=method,
                         cur_task=kwargs.get("cur_task", 0),
-                        task_num=kwargs.get("task_num", kwargs.get("expert_num")),
+                        task_num=task_num,
+                        benchmark=benchmark,
                         clip_feature_dim=kwargs.get("clip_feature_dim", 768),
                     )
                     merge_method_config_into(pseudo_args, method=method)
+                    merge_benchmark_task_num_into(pseudo_args, benchmark=benchmark)
                     if getattr(pseudo_args, "task_num", None) is None:
-                        pseudo_args.task_num = 8
+                        raise ValueError(
+                            "CL 推理需要 task_num：请传入 benchmark（如 run.py infer 会带 --benchmark），"
+                            "或在 load_model_for_inference(..., task_num=..., benchmark=...) 中显式指定 task_num。"
+                        )
                     
                     integration = IntegrationClass(pseudo_args)
                     

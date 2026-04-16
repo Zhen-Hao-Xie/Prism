@@ -131,6 +131,19 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
                         'base', 'hide_llava', 'same', 'simple_prompt'], help='持续学习方法（从 checkpoint 自动检测）')
     parser.add_argument("--batch-size", type=int, default=1,
                         help="Batch size for inference")
+    parser.add_argument(
+        "--benchmark",
+        type=str,
+        default=None,
+        help="ucit / coin 等；用于与 checkpoint 对齐的 task_num（与 run.py infer 一致）",
+    )
+    parser.add_argument(
+        "--task-num",
+        dest="cl_task_num",
+        type=int,
+        default=None,
+        help="显式指定 CL 的 task_num；若设置则优先于 --benchmark 推导",
+    )
 
 
 def build_registry() -> ModelMethodRegistry:

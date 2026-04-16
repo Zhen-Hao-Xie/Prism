@@ -228,6 +228,7 @@ class SameIntegration(CLIntegration):
     def _propagate_routing(self, model, routing: torch.Tensor) -> None:
         routing = routing.detach()
         self._last_routing = routing
+        print(f"the routing is {routing} ")
 
         for module in model.modules():
             if module.__class__.__name__ == "SAMELinear":

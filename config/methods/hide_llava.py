@@ -7,7 +7,6 @@ Defaults for method: hide_llava
 TRAIN_FLAG_OVERRIDES = {
     # keep consistent with current training command defaults
     "--method": "hide_llava",
-    "--task_num": "8",
     "--lora_r": "64",
     "--lora_alpha": "128",
     "--mm_projector_lr": "2e-5",
@@ -53,7 +52,6 @@ TRAIN_BATCH_SIZES = {
 
 # Method parameters (used by method factory / integrations if needed)
 METHOD_CONFIG = {
-    "task_num": 8,
     "clip_feature_dim": 768,
     "lora_r": 64,
     "lora_alpha": 128,
