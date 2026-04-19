@@ -127,8 +127,13 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--num-beams", dest="num_beams", type=int, default=1)
     parser.add_argument("--max-new-tokens",
                         dest="max_new_tokens", type=int, default=128)
-    parser.add_argument('--clmethod', type=str, default=None, choices=[
-                        'base', 'hide_llava', 'same', 'simple_prompt'], help='持续学习方法（从 checkpoint 自动检测）')
+    parser.add_argument(
+        '--clmethod',
+        type=str,
+        default=None,
+        choices=['base', 'hide_llava', 'same', 'simple_prompt', 'smolora', 'demust'],
+        help='持续学习方法（须与 checkpoint 训练时 method 一致；与 common/load_model.load_model_for_inference 对齐）',
+    )
     parser.add_argument("--batch-size", type=int, default=1,
                         help="Batch size for inference")
     parser.add_argument(

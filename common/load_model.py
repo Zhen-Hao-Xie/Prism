@@ -45,7 +45,7 @@ def load_model_for_train(model_args, data_args, training_args):
     merge_method_config_into(model_args)
     merge_benchmark_task_num_into(model_args)
     _m = str(getattr(model_args, "method", "") or "").lower()
-    if _m not in ("", "base", "none") and getattr(model_args, "task_num", None) is None:
+    if _m not in ("", "base", "none", "zeroshot") and getattr(model_args, "task_num", None) is None:
         raise ValueError(
             "持续学习训练需要 task_num：请在命令行传入 --benchmark（ucit / coin）"
             "或显式 --task_num；任务数由 config/benchmarks 定义，不再来自 config/methods。"
@@ -88,7 +88,10 @@ def load_model_for_train(model_args, data_args, training_args):
     if method_name != 'base':
         print(f"\n{'='*70}")
         print(f"🚀 检测到持续学习方法：{method_name}")
-        print(f"📌 将由对应方法处理 PEFT/LoRA 注入")
+        if str(method_name).lower() == "zeroshot":
+            print(f"📌 纯 LLaVA，不注入 PEFT / 无方法侧额外逻辑")
+        else:
+            print(f"📌 将由对应方法处理 PEFT/LoRA 注入")
         print(f"{'='*70}\n")
         
         CLModel, CLIntegration = _try_import_cl_components()
@@ -326,5 +329,7 @@ def load_model_for_inference(
     else:
         context_len = 2048
 
+    if isinstance(model, torch.nn.Module):
+        model.eval()
 
     return tokenizer, model, image_processor, context_len

@@ -83,7 +83,7 @@ class ModelArguments:
     )
     method: str = field(
         default="hide_llava",
-        metadata={"help": "CL method: hide_llava / same / simple_prompt 等"},
+        metadata={"help": "CL method: hide_llava / same / simple_prompt / smolora 等"},
     )
 
 @dataclass

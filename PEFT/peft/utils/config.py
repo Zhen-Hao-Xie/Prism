@@ -35,7 +35,10 @@ class PeftType(str, enum.Enum):
     IA3 = "IA3"
     MOE_LORA_HiDe = "MOE_LORA_HiDe"
     MOE_LORA_SAME = "MOE_LORA_SAME"
+    MOE_LORA_MOELORA = "MOE_LORA_MOELORA"
     SIMPLE_PROMPT = "SIMPLE_PROMPT"
+    SMOLORA = "SMOLORA"
+    DEMUST = "DEMUST"
 
 
 class TaskType(str, enum.Enum):
@@ -47,6 +50,8 @@ class TaskType(str, enum.Enum):
     FEATURE_EXTRACTION = "FEATURE_EXTRACTION"
     CAUSAL_LM_HiDe = "CAUSAL_LM_HiDe"
     CAUSAL_LM_SIMPLE_PROMPT = "CAUSAL_LM_SIMPLE_PROMPT"
+    CAUSAL_LM_SMOLORA = "CAUSAL_LM_SMOLORA"
+    CAUSAL_LM_DEMUST = "CAUSAL_LM_DEMUST"
 
 
 @dataclass

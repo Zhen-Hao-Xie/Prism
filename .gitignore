@@ -203,5 +203,13 @@ desktop.ini
 *.swp
 *.swo
 *~
-EOF
+
+# ---------------------------------------------------------------------------
+# DeMust（未发表）：以下路径被 Git 忽略；若曾提交过需先 git rm -r --cached 再 commit。
+# 公开 clone 需从 PEFT/mapping/eval 等移除 demust 引用，否则会 ImportError。
+# ---------------------------------------------------------------------------
+method/demust/
+PEFT/peft/tuners/demust.py
+config/methods/demust.py
+
 *.whl

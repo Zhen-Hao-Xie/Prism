@@ -25,5 +25,8 @@ from .p_tuning import PromptEncoder, PromptEncoderConfig, PromptEncoderReparamet
 from .prefix_tuning import PrefixEncoder, PrefixTuningConfig
 from .prompt_tuning import PromptEmbedding, PromptTuningConfig, PromptTuningInit
 from .same import SAMEConfig, SAMEModel
+from .moelora import MoELoRAConfig, MoELoRAModel
 from .hidellava import HiDeMOELoraConfig, HiDeMOELoraModel
 from .simple_prompt import SimplePromptConfig, SimplePromptModel
+from .smolora import SMoLoraConfig, SMoLoraModel
+from .demust import DeMustLoraConfig, DeMustLoraModel

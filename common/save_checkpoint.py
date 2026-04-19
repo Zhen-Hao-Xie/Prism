@@ -106,6 +106,13 @@ def _save_cl_extra_state(model, output_dir: str):
                 if success:
                     print(f"✅ CL 特定状态已通过 _integration 保存")
                     saved = True
+                else:
+                    # 基类默认 False：smolora / 仅 PEFT 等方法无单独落盘文件，不是「未找到 integration」
+                    print(
+                        "ℹ️  integration.save_extra_state() 返回 False："
+                        "当前方法无可单独保存的 CL 扩展状态（依赖上方 LoRA/PEFT 保存即可），属正常情况。"
+                    )
+                    saved = True
             else:
                 print(f"⚠️  _integration 没有 save_extra_state 方法")
         except Exception as e:
@@ -129,7 +136,10 @@ def _save_cl_extra_state(model, output_dir: str):
                     print(f"⚠️  通过 {attr_name} 保存 CL 状态失败：{e}")
     
     if not saved:
-        print(f"⚠️  CL 特定状态未保存（未找到 integration）")
+        print(
+            "⚠️  CL 特定状态未保存：model 上既无可用 ``_integration.save_extra_state``，"
+            "也未找到 hide_integration / integration 等兼容属性。"
+        )
     
     
 # common/save_checkpoint.py

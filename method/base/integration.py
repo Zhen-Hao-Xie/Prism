@@ -126,7 +126,7 @@ class CLIntegration(ABC):
         # 默认实现：跳过
         return False
     
-    def load_extra_state(self, load_dir: str) -> bool:
+    def load_extra_state(self, load_dir: str, model=None) -> bool:
         """
         加载方法特定状态
         
@@ -135,6 +135,7 @@ class CLIntegration(ABC):
         
         Args:
             load_dir: 加载目录
+            model: 可选，与 ``common/load_model.py`` 中调用约定一致（如 SAME/HiDe 从 PEFT 读 buffer）
             
         Returns:
             bool: 是否加载成功

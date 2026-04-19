@@ -1,9 +1,9 @@
 """
-Defaults for method: same
+Defaults for method: moelora
 """
 
 TRAIN_FLAG_OVERRIDES = {
-    "--method": "same",
+    "--method": "moelora",
     "--lora_r": "64",
     "--lora_alpha": "128",
     "--mm_projector_lr": "2e-5",
@@ -18,15 +18,11 @@ TRAIN_FLAG_OVERRIDES = {
 
 TRAIN_EXTRA_ARGS: list[str] = []
 
-# NOTE: backbone eval currently doesn't accept "same" in --clmethod choices,
-# so this is mostly for consistency; set it if/when you add it to CLI.
 INFER_DEFAULTS = {
-    "clmethod": "same",
-    # Batch size for `backbone.llava.eval.model_unified` (InferenceEngine)
+    "clmethod": "moelora",
     "batch_size": 12,
 }
 
-# Keys = task index in config/benchmarks/* (``run.py train <id>``). CoIN: 0–7, UCIT: 0–5.
 TRAIN_BATCH_SIZES = {
     "coin": {
         0: 12,
@@ -48,20 +44,9 @@ TRAIN_BATCH_SIZES = {
     },
 }
 
-# Method parameters (was in same.yaml)
 METHOD_CONFIG = {
-    "clip_feature_dim": 768,
     "cur_task": 0,
     "lora_r": 64,
     "lora_alpha": 128,
     "lora_dropout": 0.05,
-    "routing_temperature": 1.0,
-    "temparature": 2.0,
-    "temparature_2": 1.5,
-    "threshold": 0.85,
-    "remaining_prob": 0.85,
-    "other_total_prob": 0.15,
-    "top2_ratio": [3.0, 2.0],
 }
-
-

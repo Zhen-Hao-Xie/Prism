@@ -49,6 +49,9 @@ from .tuners import (
     PromptEncoder,
     HiDeMOELoraModel,
     SAMEModel,
+    MoELoRAModel,
+    SMoLoraModel,
+    DeMustLoraModel,
     SimplePromptConfig,
     SimplePromptModel,
 )
@@ -81,7 +84,10 @@ PEFT_TYPE_TO_MODEL_MAPPING = {
     PeftType.IA3: IA3Model,
     PeftType.MOE_LORA_HiDe: HiDeMOELoraModel,
     PeftType.MOE_LORA_SAME: SAMEModel,
+    PeftType.MOE_LORA_MOELORA: MoELoRAModel,
     PeftType.SIMPLE_PROMPT: SimplePromptModel,
+    PeftType.SMOLORA: SMoLoraModel,
+    PeftType.DEMUST: DeMustLoraModel,
 }
 
 

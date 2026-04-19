@@ -254,7 +254,15 @@ class SameIntegration(CLIntegration):
         image_feat, text_feat = self._extract_clip_features(model, images, input_ids, clip_tokenizer, text_tower)
         device = text_feat.device
 
-        if model.training and context.task_id is not None and 0 <= int(context.task_id) < self.task_num:
+        # 仅用 model.training 会在推理时被误判：HF 默认 training=True，而 eval 脚本常未调用
+        # model.eval()；generate 又在 torch.inference_mode 下运行。须同时要求「需要反传的
+        # 训练步」才走教师任务 one-hot，否则应走下面的相似度路由。
+        if (
+            model.training
+            and torch.is_grad_enabled()
+            and context.task_id is not None
+            and 0 <= int(context.task_id) < self.task_num
+        ):
             tid = int(context.task_id)
             bs = int(text_feat.shape[0])
             with torch.no_grad():
