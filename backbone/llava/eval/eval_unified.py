@@ -827,12 +827,14 @@ def build_registry() -> EvaluatorRegistry:
         IconQAEvaluator,
         CLEVREvaluator,
         Flickr30kEvaluator,
+        VizcapEvaluator,
     )
     registry.register(ImageNetREvaluator())
     registry.register(ArxivQAEvaluator())
     registry.register(IconQAEvaluator())
     registry.register(CLEVREvaluator())
     registry.register(Flickr30kEvaluator())
+    registry.register(VizcapEvaluator())
 
     return registry
 

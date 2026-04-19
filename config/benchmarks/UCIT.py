@@ -18,11 +18,11 @@ UCIT_TASKS = [
     {
         "cur_task": 0,
         "name": "ImageNet-R",
-        "train_data_path": f"{UCIT_INSTRUCTION_DIR}/ImageNet-R/train_sub.json",
-        "test_data_path": f"{UCIT_INSTRUCTION_DIR}/ImageNet-R/test_3000_sub.json",
-        "eval_annotation_path": f"{UCIT_INSTRUCTION_DIR}/ImageNet-R/test_3000_sub.json",
+        "train_data_path": f"{UCIT_INSTRUCTION_DIR}/ImageNet-R/train.json",
+        "test_data_path": f"{UCIT_INSTRUCTION_DIR}/ImageNet-R/test_3000.json",
+        "eval_annotation_path": f"{UCIT_INSTRUCTION_DIR}/ImageNet-R/test_3000.json",
         "output_dir": f"{CHECKPOINT_DIR}/UCIT/Task0_llava_lora",
-        "batch_size": 12, # From per_device_train_batch_size in Task1.sh
+        "batch_size": 12,  # From per_device_train_batch_size in Task1.sh
         "pretrain_mm_mlp_adapter": f"{PRETRAIN_MM_PROJECTOR}",
         "image_folder": UCIT_IMAGE_DIR,
         "previous_task": None,
@@ -58,10 +58,10 @@ UCIT_TASKS = [
     },
     {
         "cur_task": 2,
-        "name": "VizWiz",
+        "name": "Vizcap",
         "train_data_path": f"{UCIT_INSTRUCTION_DIR}/VizWiz/train.json",
         "test_data_path": f"{UCIT_INSTRUCTION_DIR}/VizWiz/test_3000.json",
-        "eval_annotation_path": f"{UCIT_INSTRUCTION_DIR}/VizWiz/test_3000.json",
+        "eval_annotation_path": f"{UCIT_INSTRUCTION_DIR}/VizWiz/val_coco_type_3000.json",
         "output_dir": f"{CHECKPOINT_DIR}/UCIT/Task2_llava_lora",
         "batch_size": 12,
         "previous_task": f"{CHECKPOINT_DIR}/UCIT/Task1_llava_lora",
@@ -121,7 +121,7 @@ UCIT_TASKS = [
         "name": "Flickr30k",
         "train_data_path": f"{UCIT_INSTRUCTION_DIR}/Flickr30k/train_brief_4w.json",
         "test_data_path": f"{UCIT_INSTRUCTION_DIR}/Flickr30k/test_3000.json",
-        "eval_annotation_path": f"{UCIT_INSTRUCTION_DIR}/Flickr30k/val_coco_type_3000.json",
+        "eval_annotation_path": f"{UCIT_INSTRUCTION_DIR}/Flickr30k/val_coco_type.json",
         "output_dir": f"{CHECKPOINT_DIR}/UCIT/Task5_llava_lora",
         "batch_size": 12,
         "previous_task": f"{CHECKPOINT_DIR}/UCIT/Task4_llava_lora",

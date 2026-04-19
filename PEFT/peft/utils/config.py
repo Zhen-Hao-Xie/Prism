@@ -38,6 +38,7 @@ class PeftType(str, enum.Enum):
     MOE_LORA_MOELORA = "MOE_LORA_MOELORA"
     SIMPLE_PROMPT = "SIMPLE_PROMPT"
     SMOLORA = "SMOLORA"
+    SEFE = "SEFE"
 
 
 class TaskType(str, enum.Enum):
