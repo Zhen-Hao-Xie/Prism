@@ -131,7 +131,7 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         '--clmethod',
         type=str,
         default=None,
-        choices=['base', 'hide_llava', 'same', 'simple_prompt', 'smolora', 'demust'],
+        choices=['base', 'hide_llava', 'same', 'simple_prompt', 'smolora'],
         help='持续学习方法（须与 checkpoint 训练时 method 一致；与 common/load_model.load_model_for_inference 对齐）',
     )
     parser.add_argument("--batch-size", type=int, default=1,

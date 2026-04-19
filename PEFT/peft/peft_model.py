@@ -51,7 +51,6 @@ from .tuners import (
     SAMEModel,
     MoELoRAModel,
     SMoLoraModel,
-    DeMustLoraModel,
     SimplePromptConfig,
     SimplePromptModel,
 )
@@ -87,7 +86,6 @@ PEFT_TYPE_TO_MODEL_MAPPING = {
     PeftType.MOE_LORA_MOELORA: MoELoRAModel,
     PeftType.SIMPLE_PROMPT: SimplePromptModel,
     PeftType.SMOLORA: SMoLoraModel,
-    PeftType.DEMUST: DeMustLoraModel,
 }
 
 

@@ -38,7 +38,6 @@ class PeftType(str, enum.Enum):
     MOE_LORA_MOELORA = "MOE_LORA_MOELORA"
     SIMPLE_PROMPT = "SIMPLE_PROMPT"
     SMOLORA = "SMOLORA"
-    DEMUST = "DEMUST"
 
 
 class TaskType(str, enum.Enum):
@@ -51,7 +50,6 @@ class TaskType(str, enum.Enum):
     CAUSAL_LM_HiDe = "CAUSAL_LM_HiDe"
     CAUSAL_LM_SIMPLE_PROMPT = "CAUSAL_LM_SIMPLE_PROMPT"
     CAUSAL_LM_SMOLORA = "CAUSAL_LM_SMOLORA"
-    CAUSAL_LM_DEMUST = "CAUSAL_LM_DEMUST"
 
 
 @dataclass

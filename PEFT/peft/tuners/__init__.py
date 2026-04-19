@@ -29,4 +29,3 @@ from .moelora import MoELoRAConfig, MoELoRAModel
 from .hidellava import HiDeMOELoraConfig, HiDeMOELoraModel
 from .simple_prompt import SimplePromptConfig, SimplePromptModel
 from .smolora import SMoLoraConfig, SMoLoraModel
-from .demust import DeMustLoraConfig, DeMustLoraModel

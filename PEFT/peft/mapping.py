@@ -41,7 +41,6 @@ from .tuners import (
     MoELoRAConfig,
     SimplePromptConfig,
     SMoLoraConfig,
-    DeMustLoraConfig,
 )
 from .utils import PromptLearningConfig, _prepare_prompt_learning_config
 
@@ -62,7 +61,6 @@ MODEL_TYPE_TO_PEFT_MODEL_MAPPING = {
     "CAUSAL_LM_HiDe": PeftModelForCausalLMLORAMOE,
     "CAUSAL_LM_SIMPLE_PROMPT": PeftModelForCausalLMSimplePrompt,
     "CAUSAL_LM_SMOLORA": PeftModelForCausalLMLORAMOE,
-    "CAUSAL_LM_DEMUST": PeftModelForCausalLMLORAMOE,
 }
 
 PEFT_TYPE_TO_CONFIG_MAPPING = {
@@ -78,7 +76,6 @@ PEFT_TYPE_TO_CONFIG_MAPPING = {
     "MOE_LORA_MOELORA": MoELoRAConfig,
     "SIMPLE_PROMPT": SimplePromptConfig,
     "SMOLORA": SMoLoraConfig,
-    "DEMUST": DeMustLoraConfig,
 }
 
 

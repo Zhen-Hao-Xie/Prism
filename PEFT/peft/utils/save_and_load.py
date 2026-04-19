@@ -37,7 +37,6 @@ def get_peft_model_state_dict(model, state_dict=None, adapter_name="default"):
         PeftType.MOE_LORA_SAME,
         PeftType.MOE_LORA_MOELORA,
         PeftType.SMOLORA,
-        PeftType.DEMUST,
     ):
         # to_return = lora_state_dict(model, bias=model.peft_config.bias)
         # adapted from `https://github.com/microsoft/LoRA/blob/main/loralib/utils.py`
@@ -119,7 +118,6 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         PeftType.MOE_LORA_SAME,
         PeftType.MOE_LORA_MOELORA,
         PeftType.SMOLORA,
-        PeftType.DEMUST,
     ):
         peft_model_state_dict = {}
         parameter_prefix = "ia3_" if config.peft_type == PeftType.IA3 else "lora_"
