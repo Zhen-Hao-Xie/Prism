@@ -23,7 +23,7 @@ TRAIN_EXTRA_ARGS: list[str] = []
 INFER_DEFAULTS = {
     "clmethod": "same",
     # Batch size for `backbone.llava.eval.model_unified` (InferenceEngine)
-    "batch_size": 12,
+    "batch_size": 1,
 }
 
 # Keys = task index in config/benchmarks/* (``run.py train <id>``). CoIN: 0–7, UCIT: 0–5.
