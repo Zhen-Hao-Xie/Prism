@@ -108,9 +108,10 @@ class Simple_promptIntegration(CLIntegration):
                 n_train,
             )
             print(
-                f"[simple_prompt] 训练将只更新 task_prompts 槽位 {tid}；"
-                f"num_prompt_tokens={spm.num_prompt_tokens}；该槽可训练元素数={n_elems:,} "
-                f"（应与 optimizer 中 prompt 参数量一致）。推理用 text_anchor 路由选槽，与训练 cur_task 无关。",
+                f"[simple_prompt] Training updates only task_prompts slot {tid}; "
+                f"num_prompt_tokens={spm.num_prompt_tokens}; trainable elements in this slot={n_elems:,} "
+                f"(should match optimizer prompt parameter count). "
+                f"At inference, slot is chosen by text_anchor routing, independent of training cur_task.",
                 flush=True,
             )
 
@@ -276,7 +277,7 @@ class Simple_promptIntegration(CLIntegration):
 
     def _print_loaded_anchors(self, path: str) -> None:
         """从 checkpoint 恢复 anchors 后打印摘要（便于核对是否加载成功）。"""
-        print(f"\n[simple_prompt] 已从文件加载 anchors: {path}")
+        print(f"\n[simple_prompt] Loaded anchors from file: {path}")
         if self.image_anchors is not None:
             print("  image_anchors (L2):")
             for i, p in enumerate(self.image_anchors):
@@ -380,7 +381,7 @@ class Simple_promptIntegration(CLIntegration):
         return
 
     def on_task_end(self, model, context: CLContext, task_id: int) -> None:
-        print(f"[simple_prompt] 任务 {task_id} 训练结束")
+        print(f"[simple_prompt] Finished training for task {task_id}")
 
     def get_inference_config(self) -> Dict:
         return {"task_num": self.task_num, "num_prompt_tokens": self.num_prompt_tokens}

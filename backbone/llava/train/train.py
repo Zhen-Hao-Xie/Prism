@@ -21,7 +21,7 @@ _current_file = Path(__file__).absolute()
 _project_root = _current_file.parent.parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
-    print(f"✅ [train.py] 已添加项目根目录：{_project_root}")
+    print(f"[train.py] Added project root to sys.path: {_project_root}")
 
 
 from common import (

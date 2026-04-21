@@ -1,7 +1,8 @@
-from eval.eval_default import BaseEvaluator
-from eval.eval_caption import eval_single as eval_caption_single
-from eval.eval_caption import create_coco_type, merge_captions
-from eval.eval_deepseek_r1 import eval_single, deepseek_chat_final
+from .eval_default import BaseEvaluator
+from .eval_caption import eval_single as eval_caption_single
+from .eval_caption import create_coco_type, merge_captions
+from .eval_deepseek_r1 import eval_single, deepseek_chat_final
+
 import os
 from typing import Any, Dict
 

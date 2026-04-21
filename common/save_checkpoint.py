@@ -92,31 +92,32 @@ def _save_cl_extra_state(model, output_dir: str):
     saved = False
     
     # ========== 调试信息 ==========
-    print(f"🔍 调试信息 - model 类型：{type(model)}")
-    print(f"🔍 调试信息 - hasattr _integration: {hasattr(model, '_integration')}")
-    print(f"🔍 调试信息 - hasattr integration: {hasattr(model, 'integration')}")
+    print(f"Debug: model type: {type(model)}")
+    print(f"Debug: hasattr _integration: {hasattr(model, '_integration')}")
+    print(f"Debug: hasattr integration: {hasattr(model, 'integration')}")
     # ===========================
     
     # 优先级 1: CLModel 包装后的模型（有 _integration 属性）← 关键修复：带下划线
     if hasattr(model, '_integration') and model._integration is not None:
-        print(f"🔍 找到 _integration 属性")
+        print("Found _integration on model")
         try:
             if hasattr(model._integration, 'save_extra_state'):
                 success = model._integration.save_extra_state(output_dir, model=model)
                 if success:
-                    print(f"✅ CL 特定状态已通过 _integration 保存")
+                    print("CL extra state saved via _integration")
                     saved = True
                 else:
                     # 基类默认 False：smolora / 仅 PEFT 等方法无单独落盘文件，不是「未找到 integration」
                     print(
-                        "ℹ️  integration.save_extra_state() 返回 False："
-                        "当前方法无可单独保存的 CL 扩展状态（依赖上方 LoRA/PEFT 保存即可），属正常情况。"
+                        "integration.save_extra_state() returned False: "
+                        "this method has no separate CL state file (LoRA/PEFT save above is enough). "
+                        "This is expected for some methods."
                     )
                     saved = True
             else:
-                print(f"⚠️  _integration 没有 save_extra_state 方法")
+                print("_integration has no save_extra_state method")
         except Exception as e:
-            print(f"⚠️  通过 _integration 保存 CL 状态失败：{e}")
+            print(f"Failed to save CL state via _integration: {e}")
             import traceback
             traceback.print_exc()
     
@@ -129,16 +130,16 @@ def _save_cl_extra_state(model, output_dir: str):
                     if hasattr(integration, 'save_extra_state'):
                         success = integration.save_extra_state(output_dir, model=model)
                         if success:
-                            print(f"✅ CL 特定状态已通过 {attr_name} 保存")
+                            print(f"CL extra state saved via {attr_name}")
                             saved = True
                             break
                 except Exception as e:
-                    print(f"⚠️  通过 {attr_name} 保存 CL 状态失败：{e}")
+                    print(f"Failed to save CL state via {attr_name}: {e}")
     
     if not saved:
         print(
-            "⚠️  CL 特定状态未保存：model 上既无可用 ``_integration.save_extra_state``，"
-            "也未找到 hide_integration / integration 等兼容属性。"
+            "CL extra state not saved: no usable _integration.save_extra_state "
+            "and no hide_integration / integration fallback attributes on model."
         )
     
     
@@ -147,7 +148,7 @@ def save_model(model, training_args, trainer=None, save_extra_state: bool = True
     """统一的模型保存函数"""
     
     print(f"\n{'='*70}")
-    print(f"📦 开始保存模型 | 输出目录：{training_args.output_dir}")
+    print(f"Saving model | output_dir: {training_args.output_dir}")
     print(f"{'='*70}\n")
     
     os.makedirs(training_args.output_dir, exist_ok=True)
@@ -158,27 +159,27 @@ def save_model(model, training_args, trainer=None, save_extra_state: bool = True
         _base_model = getattr(model, '_base_model')
         if hasattr(_base_model, 'peft_config') or hasattr(_base_model, 'adapter_model'):
             save_model = _base_model
-            print(f"🔍 检测到 CLModel 包装，使用 _base_model 保存")
+            print("CLModel wrapper detected; saving _base_model")
         elif hasattr(_base_model, 'base_model'):
             if hasattr(_base_model.base_model, 'peft_config'):
                 save_model = _base_model
-                print(f"🔍 检测到嵌套包装，使用 _base_model 保存")
+                print("Nested wrapper detected; saving _base_model")
     
     # ========== 调试：检查参数量 ==========
     total_params = sum(p.numel() for p in save_model.parameters())
     trainable_params = sum(p.numel() for p in save_model.parameters() if p.requires_grad)
-    print(f"🔍 保存前参数量检查:")
-    print(f"  总参数量：{total_params:,}")
-    print(f"  可训练参数量：{trainable_params:,}")
-    print(f"  可训练比例：{trainable_params / total_params * 100:.4f}%")
+    print("Parameter counts before save:")
+    print(f"  total parameters: {total_params:,}")
+    print(f"  trainable parameters: {trainable_params:,}")
+    print(f"  trainable ratio: {trainable_params / total_params * 100:.4f}%")
     # ===================================
     
     if training_args.lora_enable:
-        print("🔧 LoRA 模式：保存 LoRA 权重 + 非 LoRA 权重")
+        print("LoRA mode: saving LoRA + non-LoRA weights")
         
         # ========== 关键修复：使用 save_model.named_parameters() ==========
         named_params = list(save_model.named_parameters())
-        print(f"🔍 收集到 {len(named_params)} 个参数")
+        print(f"Collected {len(named_params)} named parameters")
         
         state_dict = get_peft_state_maybe_zero_3(
             named_params, 
@@ -189,9 +190,9 @@ def save_model(model, training_args, trainer=None, save_extra_state: bool = True
             require_grad_only=True
         )
         
-        print(f"🔍 提取后:")
-        print(f"  LoRA 参数量：{len(state_dict)}")
-        print(f"  非 LoRA 参数量：{len(non_lora_state_dict)}")
+        print("After extraction:")
+        print(f"  LoRA parameter tensors: {len(state_dict)}")
+        print(f"  non-LoRA parameter tensors: {len(non_lora_state_dict)}")
         # ===================================
         
         if training_args.local_rank == 0 or training_args.local_rank == -1:
@@ -203,14 +204,14 @@ def save_model(model, training_args, trainer=None, save_extra_state: bool = True
                     state_dict=state_dict if state_dict else None,
                     safe_serialization=True
                 )
-                print(f"✅ LoRA 适配器已保存")
+                print("LoRA adapter saved (save_pretrained)")
             elif state_dict:
                 torch.save(
                     state_dict, 
                     os.path.join(training_args.output_dir, 'adapter_model.bin')
                 )
                 lora_params = sum(p.numel() for p in state_dict.values())
-                print(f"✅ LoRA 权重已保存 | 参数量：{lora_params:,}")
+                print(f"LoRA weights saved | numel: {lora_params:,}")
             
             if non_lora_state_dict:
                 torch.save(
@@ -218,9 +219,9 @@ def save_model(model, training_args, trainer=None, save_extra_state: bool = True
                     os.path.join(training_args.output_dir, 'non_lora_trainables.bin')
                 )
                 non_lora_params = sum(p.numel() for p in non_lora_state_dict.values())
-                print(f"✅ 非 LoRA 权重已保存 | 参数量：{non_lora_params:,}")
+                print(f"non-LoRA weights saved | numel: {non_lora_params:,}")
     else:
-        print("🔧 全量微调模式：使用 HF Trainer 保存")
+        print("Full finetune mode: saving via HF Trainer path")
         if trainer is not None:
             safe_save_model_for_hf_trainer(trainer, training_args.output_dir)
         else:
@@ -237,5 +238,5 @@ def save_model(model, training_args, trainer=None, save_extra_state: bool = True
         _save_cl_extra_state(model, training_args.output_dir)
     
     print(f"\n{'='*70}")
-    print(f"✅ 模型保存完成")
+    print("Model save finished")
     print(f"{'='*70}\n")

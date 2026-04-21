@@ -11,16 +11,16 @@ def load_from_checkpoint(model, checkpoint_path, merge_lora=False, for_increment
     # ========== 找到 PEFT 模型 ==========
     lora_target = model
     if hasattr(model, '_base_model'):
-        print(f"  🔍 检测到 CLModel 包装")
+        print("  Detected CLModel wrapper")
         lora_target = model._base_model
     
-    print(f"  ✅ LoRA 目标模型类型：{type(lora_target)}")
-    print(f"  📌 是否有 load_adapter 方法: {hasattr(lora_target, 'load_adapter')}")
+    print(f"  LoRA target model type: {type(lora_target)}")
+    print(f"  has load_adapter: {hasattr(lora_target, 'load_adapter')}")
     
     # ========== 加载 non-LoRA 权重 ==========
     non_lora_path = os.path.join(checkpoint_path, 'non_lora_trainables.bin')
     if os.path.exists(non_lora_path):
-        print(f"  📂 加载 non-LoRA 权重...")
+        print("  Loading non-LoRA weights...")
         non_lora_weights = torch.load(non_lora_path, map_location='cpu')
         
         target = lora_target
@@ -30,7 +30,7 @@ def load_from_checkpoint(model, checkpoint_path, merge_lora=False, for_increment
             target = target.model
         
         target.load_state_dict(non_lora_weights, strict=False)
-        print(f"    ✅ non-LoRA 加载完成")
+        print("    non-LoRA weights loaded")
     
     
     # ========== 加载 LoRA 权重 ==========
@@ -38,19 +38,19 @@ def load_from_checkpoint(model, checkpoint_path, merge_lora=False, for_increment
         # 增量训练：使用 load_adapter
         if hasattr(lora_target, 'load_adapter'):
             if os.path.isdir(checkpoint_path):
-                print(f"\n  📂 加载 LoRA adapter (增量训练模式)...")
+                print("\n  Loading LoRA adapter (incremental training mode)...")
                 print(f"      checkpoint_path: {checkpoint_path}")
                 lora_target.load_adapter(checkpoint_path, adapter_name='default')
-                print(f"    ✅ LoRA adapter 加载完成")
+                print("    LoRA adapter loaded")
         else:
-            print(f"  ❌ 模型没有 load_adapter 方法")
+            print("  Model has no load_adapter method")
     
     # ========== 推理模式：也使用 load_adapter ==========
     else:
-        print(f"\n  📂 推理模式：尝试使用 load_adapter...")
+        print("\n  Inference mode: trying load_adapter...")
         if hasattr(lora_target, 'load_adapter'):
             if os.path.isdir(checkpoint_path):
-                print(f"      调用 load_adapter({checkpoint_path}, adapter_name='default')")
+                print(f"      load_adapter({checkpoint_path}, adapter_name='default')")
                 
                 # 检查 adapter_config.json
                 config_path = os.path.join(checkpoint_path, 'adapter_config.json')
@@ -61,12 +61,12 @@ def load_from_checkpoint(model, checkpoint_path, merge_lora=False, for_increment
                     print(f"      adapter_config peft_type: {config.get('peft_type', 'unknown')}")
                 
                 lora_target.load_adapter(checkpoint_path, adapter_name='default')
-                print(f"    ✅ load_adapter 调用完成")
+                print("    load_adapter finished")
             else:
-                print(f"    ⚠️ Checkpoint 不是目录，回退到手动加载...")
+                print("    Checkpoint is not a directory, falling back to manual LoRA load...")
                 _manual_load_lora(lora_target, checkpoint_path)
         else:
-            print(f"    ⚠️ 模型没有 load_adapter，手动加载...")
+            print("    Model has no load_adapter, loading LoRA manually...")
             _manual_load_lora(lora_target, checkpoint_path)
 
     # ==========================================
@@ -93,12 +93,12 @@ def load_from_checkpoint(model, checkpoint_path, merge_lora=False, for_increment
         avg0 = sum(expert_norms['0']) / len(expert_norms['0'])
         avg1 = sum(expert_norms['1']) / len(expert_norms['1'])
         if abs(avg0 - avg1) < 1e-6:
-            print(f"    ⚠️ 警告：Expert 0 和 Expert 1 权重相同！")
+            print("    Warning: Expert 0 and Expert 1 weights appear identical")
         else:
-            print(f"    ✅ Expert 0 vs 1: {avg0:.6f} vs {avg1:.6f}")
+            print(f"    Expert 0 vs 1 avg norm: {avg0:.6f} vs {avg1:.6f}")
     # ==================================
     
-    print(f"\n✅ Checkpoint 加载完成")
+    print("\nCheckpoint load finished")
     return model
 
 
@@ -109,7 +109,7 @@ def _manual_load_lora(lora_target, checkpoint_path):
         lora_path = os.path.join(checkpoint_path, 'adapter_model.bin')
     
     if os.path.exists(lora_path):
-        print(f"      手动加载: {lora_path}")
+        print(f"      Manual load: {lora_path}")
         
         if lora_path.endswith('.safetensors'):
             from safetensors.torch import load_file
@@ -131,12 +131,12 @@ def _manual_load_lora(lora_target, checkpoint_path):
             remapped_weights[new_key] = value
         
         matched = set(remapped_weights.keys()) & model_keys
-        print(f"      映射后匹配: {len(matched)}/{len(remapped_weights)}")
+        print(f"      Keys matched after remap: {len(matched)}/{len(remapped_weights)}")
         
         if len(matched) > 0:
             missing, unexpected = lora_target.load_state_dict(remapped_weights, strict=False)
-            print(f"      ✅ 手动加载完成")
+            print("      Manual LoRA load finished")
         else:
-            print(f"      ❌ 无法映射权重")
+            print("      Failed to map LoRA weights to model keys")
     else:
-        print(f"      ⚠️ 未找到 LoRA 权重文件")
+        print("      LoRA weight file not found")

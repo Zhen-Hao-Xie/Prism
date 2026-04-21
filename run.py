@@ -577,11 +577,11 @@ def _run_inference_parallel(
             if rc != 0:
                 raise RuntimeError(f"inference subprocess failed with code {rc}")
             with print_lock:
-                print(f"  ✅ Chunk {idx} completed on GPU {gpus[idx]}")
+                print(f"  Chunk {idx} completed on GPU {gpus[idx]}")
             return True
         except Exception as e:
             with print_lock:
-                print(f"  ❌ Chunk {idx} failed on GPU {gpus[idx]}: {e}")
+                print(f"  Chunk {idx} failed on GPU {gpus[idx]}: {e}")
             return False
 
     import concurrent.futures
@@ -728,7 +728,7 @@ def cmd_train(args: argparse.Namespace) -> int:
         except Exception as e:
             import traceback
 
-            _log_line("\n❌ Failed before launching training subprocess.", log_file=log_path, mirror=mirror)
+            _log_line("\nFailed before launching training subprocess.", log_file=log_path, mirror=mirror)
             _log_line(f"Exception: {type(e).__name__}: {e}", log_file=log_path, mirror=mirror)
             tb = traceback.format_exc()
             for line in tb.splitlines():
@@ -821,7 +821,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
                     else:
                         print(f"Warning: {chunk_file} not found")
 
-            print("\n📈 Running evaluation...")
+            print("\nRunning evaluation...")
             _run_evaluation(task, result_file=merged_file, output_dir=result_dir)
             return 0
 
@@ -911,7 +911,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
                         import traceback
 
                         _log_line(
-                            f"  ❌ Chunk {idx} crashed before/while launching subprocess: {e}",
+                            f"  Chunk {idx} crashed before/while launching subprocess: {e}",
                             log_file=log_path,
                             mirror=mirror,
                             lock=log_lock,
@@ -934,14 +934,14 @@ def cmd_infer(args: argparse.Namespace) -> int:
                             ok = False
                         if ok:
                             _log_line(
-                                f"  ✅ Chunk {idx} completed on GPU {gpus[idx]}",
+                                f"  Chunk {idx} completed on GPU {gpus[idx]}",
                                 log_file=log_path,
                                 mirror=mirror,
                                 lock=log_lock,
                             )
                         else:
                             _log_line(
-                                f"  ❌ Chunk {idx} failed on GPU {gpus[idx]}",
+                                f"  Chunk {idx} failed on GPU {gpus[idx]}",
                                 log_file=log_path,
                                 mirror=mirror,
                                 lock=log_lock,
@@ -964,7 +964,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
                     else:
                         _log_line(f"Warning: {chunk_file} not found", log_file=log_path, mirror=mirror, lock=log_lock)
 
-            _log_line("\n📈 Running evaluation...", log_file=log_path, mirror=mirror, lock=log_lock)
+            _log_line("\nRunning evaluation...", log_file=log_path, mirror=mirror, lock=log_lock)
             eval_task = EVAL_TASK_MAP.get(task["name"])
             if eval_task is None:
                 raise RuntimeError(f"No evaluation task mapping for {task['name']}")
@@ -990,9 +990,9 @@ def cmd_infer(args: argparse.Namespace) -> int:
             rc = 0
         except Exception as e:
             with open(log_path, "a", encoding="utf-8") as f:
-                f.write(f"\n❌ Task {task_id} failed: {e}\n")
+                f.write(f"\nTask {task_id} failed: {e}\n")
             if mirror:
-                print(f"❌ Task {task_id} failed: {e}")
+                print(f"Task {task_id} failed: {e}")
             rc = 1
 
         if rc != 0:
@@ -1000,7 +1000,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
 
     if failed:
         if mirror:
-            print(f"❌ Failed tasks: {failed}")
+            print(f"Failed tasks: {failed}")
         return 1
     return 0
 

@@ -226,7 +226,7 @@ class SAMELayer(LoraLayer):
                 r, self.out_features, self.expert_num, self.cur_task, self.training, self.layer_id)}))
             self.scaling[adapter_name] = lora_alpha / r
 
-            # ✅ 新增：显式设置所有专家参数为可训练
+            # Explicitly mark all expert parameters as trainable
             for expert_id in range(self.expert_num):
                 for param in self.lora_A[adapter_name].loraA[expert_id].parameters():
                     param.requires_grad_(True)
@@ -355,7 +355,7 @@ class SAMELinear(nn.Linear, SAMELayer):
 
         U = getattr(self, f"cov_U_{adapter}")
         S = getattr(self, f"cov_S_{adapter}")
-            # ✅ 改为能量阈值 0.95
+            # Energy threshold 0.95
         energy = S ** 2
         total_energy = energy.sum()
         
@@ -412,7 +412,7 @@ class SAMELinear(nn.Linear, SAMELayer):
     #         U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
     #         S_prev = getattr(self, f"cov_S_prev_{adapter}").to(device)
             
-    #         # ✅ 论文方法：基于奇异值阈值确定零空间 (而非能量占比)
+    #         # Paper method: singular-value threshold for null space (not energy ratio)
     #         # 找出非零奇异值的最小值
     #         nonzero_mask = S_prev > 1e-8 * S_prev.max()
     #         if nonzero_mask.sum() == 0:
@@ -429,13 +429,13 @@ class SAMELinear(nn.Linear, SAMELayer):
     #         if U_null.size(1) == 0:
     #             return grad
             
-    #         # ✅ 计算投影矩阵 H = V_null @ V_null.T (论文 Eq. 23)
+    #         # Projection matrix H = V_null @ V_null.T (paper Eq. 23)
     #         # 为了效率，直接计算 grad @ H 而不是构造完整矩阵
     #         grad_t = grad.t()
     #         # 投影到零空间: grad_proj = U_null @ (U_null.T @ grad_t)
     #         projected_grad_t = U_null @ (U_null.t() @ grad_t)
             
-    #         # ✅ 专家松弛约束 (论文 Eq. 21 后文): Delta P = [eta * H + (1-eta) * I] @ Grad
+    #         # Expert relaxation (paper Eq. 21): Delta P = [eta * H + (1-eta) * I] @ Grad
     #         # 如果是专家参数，应用 eta 松弛 (eta 接近 1，如 0.99)；如果是 Router，eta=1.0
     #         eta = 0.99 
     #         scaled_grad_t = eta * projected_grad_t + (1 - eta) * grad_t
@@ -470,7 +470,7 @@ class SAMELinear(nn.Linear, SAMELayer):
     #         U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
     #         S_prev = getattr(self, f"cov_S_prev_{adapter}").to(device)
             
-    #         # ✅ 计算累积能量占比，找到保留的维度数 k
+    #         # Cumulative energy ratio to choose retained rank k
     #         energy = S_prev ** 2
     #         total_energy = energy.sum()
             
@@ -525,7 +525,7 @@ class SAMELinear(nn.Linear, SAMELayer):
             cumsum = torch.cumsum(energy, dim=0)
             ratio = cumsum / (total_energy + 1e-10)
             k = (ratio <= 0.9).sum().item() + 1
-            k = max(1, min(k, len(S_prev)))  # ✅ 确保 1 ≤ k ≤ len(S_prev)
+            k = max(1, min(k, len(S_prev)))  # clamp k to [1, len(S_prev)]
             
             # 2. 曲率感知缩放因子
             mu = self.curvature_mu  # 建议设为 1e-3
@@ -735,7 +735,7 @@ class SAMELinear(nn.Linear, SAMELayer):
             setattr(self, f"cov_prev_valid_{adapter}", torch.tensor(True))
         else:
             setattr(self, f"cov_prev_valid_{adapter}", torch.tensor(False))
-            print(f"[Layer {self.layer_id}] ❌ No valid covariance to save")
+            print(f"[Layer {self.layer_id}] No valid covariance to save")
 
     def reset_for_new_task(self, adapter):
         setattr(self, f"cov_alpha_{adapter}", torch.tensor(0.0))

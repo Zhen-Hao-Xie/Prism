@@ -47,8 +47,8 @@ def load_model_for_train(model_args, data_args, training_args):
     _m = str(getattr(model_args, "method", "") or "").lower()
     if _m not in ("", "base", "none", "zeroshot") and getattr(model_args, "task_num", None) is None:
         raise ValueError(
-            "持续学习训练需要 task_num：请在命令行传入 --benchmark（ucit / coin）"
-            "或显式 --task_num；任务数由 config/benchmarks 定义，不再来自 config/methods。"
+            "Continual learning training requires task_num: pass --benchmark (ucit / coin) "
+            "or --task_num explicitly; task counts come from config/benchmarks, not config/methods."
         )
 
     compute_dtype = torch.bfloat16 if training_args.bf16 else torch.float16 if training_args.fp16 else torch.float32
@@ -68,9 +68,9 @@ def load_model_for_train(model_args, data_args, training_args):
 
     # ========== 修改 1: 多模态初始化（在 CL 包装之前）==========
     if model_args.vision_tower is not None:
-        print(f"🔧 初始化多模态模块...")
+        print("Initializing multimodal modules...")
         model, data_args = initialize_multimodal_modules(model, model_args, training_args, data_args, tokenizer)
-        print(f"✅ 多模态模块初始化完成\n")
+        print("Multimodal modules initialized.\n")
 
     model = adjust_precision(model, training_args)
 
@@ -87,16 +87,16 @@ def load_model_for_train(model_args, data_args, training_args):
     
     if method_name != 'base':
         print(f"\n{'='*70}")
-        print(f"🚀 检测到持续学习方法：{method_name}")
+        print(f"Continual learning method: {method_name}")
         if str(method_name).lower() == "zeroshot":
-            print(f"📌 纯 LLaVA，不注入 PEFT / 无方法侧额外逻辑")
+            print("Zeroshot: plain LLaVA, no PEFT injection / no method-side extras")
         else:
-            print(f"📌 将由对应方法处理 PEFT/LoRA 注入")
+            print("Method integration will handle PEFT/LoRA injection")
         print(f"{'='*70}\n")
         
         CLModel, CLIntegration = _try_import_cl_components()
         if CLModel is None:
-            raise ImportError(f"无法导入 CL 组件")
+            raise ImportError("Failed to import CL components (CLModel / CLIntegration)")
         
         module = __import__(f"method.{method_name}.integration", fromlist=[''])
         IntegrationClass = getattr(module, f"{method_name.capitalize()}Integration")
@@ -104,30 +104,30 @@ def load_model_for_train(model_args, data_args, training_args):
         
         # 包装模型
         model = CLModel(model, integration)
-        print(f"✅ CLModel 包装完成 | 方法：{method_name}\n")
+        print(f"CLModel wrapper ready | method: {method_name}\n")
         
         # ========== 修改 3: 加载 checkpoint（在包装后）==========
         # 这样 HiDe 的 LoRA 已经注入，checkpoint 可以正确加载
         if model_args.previous_task_model_path is not None and os.path.exists(model_args.previous_task_model_path):
-            print(f"📦 加载前一任务 checkpoint: {model_args.previous_task_model_path}")
+            print(f"Loading previous-task checkpoint: {model_args.previous_task_model_path}")
             model = load_from_checkpoint(
                 model,
                 model_args.previous_task_model_path,
                 merge_lora=False,
                 for_incremental_training=True
             )
-            print(f"✅ Checkpoint 加载完成\n")
+            print("Checkpoint load finished.\n")
             
             # 加载方法额外状态（如 SAME 的 same_state.bin / HiDe 的 anchors 等）
             if hasattr(model, '_integration'):
                 integration = model._integration
                 if hasattr(integration, 'load_extra_state'):
-                    print(f"🔧 加载之前任务的方法额外状态...")
+                    print("Loading method extra state from previous checkpoint...")
                     ok = integration.load_extra_state(model_args.previous_task_model_path, model=model)
                     if ok:
-                        print(f"✅ 方法额外状态已恢复")
+                        print("Method extra state restored")
                     else:
-                        print(f"⚠️  未找到或无法加载方法额外状态（将继续训练）")
+                        print("Method extra state not found or failed to load (continuing training)")
     else:
         assert(0)
     # =======================================================
@@ -144,7 +144,7 @@ def _try_import_cl_components():
         from method.base.integration import CLIntegration
         return CLModel, CLIntegration
     except ImportError as e:
-        print(f"⚠️  CL 组件导入失败：{e}")
+        print(f"CL component import failed: {e}")
         return None, None
     
 import importlib  # ← 在文件顶部添加
@@ -222,7 +222,7 @@ def load_model_for_inference(
                 model.model.embed_tokens.weight = torch.nn.Parameter(torch.empty(token_num, tokem_dim, device=model.device, dtype=model.dtype))
 
             if method is not None and method != 'base':
-                print(f"🚀 推理模式：应用持续学习方法 {method}...")
+                print(f"Inference: applying continual learning method {method}...")
                 CLModel, CLIntegration = _try_import_cl_components()
                 if CLModel is not None:
                     module = __import__(f"method.{method}.integration", fromlist=[''])
@@ -231,7 +231,7 @@ def load_model_for_inference(
                         try:
                             module.ensure_peft_extension_registered()
                         except Exception as e:
-                            print(f"⚠️  方法 {method} 的 PEFT 扩展注册失败：{e}")
+                            print(f"PEFT extension registration failed for method {method}: {e}")
                     IntegrationClass = getattr(module, f"{method.capitalize()}Integration")
                     
                     class SimpleArgs:
@@ -250,32 +250,32 @@ def load_model_for_inference(
                     merge_benchmark_task_num_into(pseudo_args, benchmark=benchmark)
                     if getattr(pseudo_args, "task_num", None) is None:
                         raise ValueError(
-                            "CL 推理需要 task_num：请传入 benchmark（如 run.py infer 会带 --benchmark），"
-                            "或在 load_model_for_inference(..., task_num=..., benchmark=...) 中显式指定 task_num。"
+                            "CL inference requires task_num: pass benchmark (e.g. run.py infer sets --benchmark) "
+                            "or set task_num explicitly in load_model_for_inference(..., task_num=..., benchmark=...)."
                         )
                     
                     integration = IntegrationClass(pseudo_args)
                     
                     # 先包装为 CLModel
                     model = CLModel(model, integration)
-                    print(f"✅ 推理模型已包装为 CLModel | 方法：{method}")
+                    print(f"Inference model wrapped with CLModel | method: {method}")
                     
                     if os.path.exists(model_path):
-                        print(f"📦 从 checkpoint 加载模型状态...")
+                        print("Loading weights from checkpoint...")
                         model = load_from_checkpoint(
                             model,
                             model_path,
                             merge_lora=False,  # ← 不要 merge，保持 PEFT 结构
                             for_incremental_training=False  # ← 推理时不需要增量训练
                         )
-                        print(f"✅ Checkpoint 加载完成")
+                        print("Checkpoint load finished")
                     
                     # 加载 HiDe 状态（anchors 等）
                     if hasattr(integration, 'load_extra_state'):
-                        print(f"🔧 加载额外状态...")
+                        print("Loading extra state...")
                         success = integration.load_extra_state(model_path, model=model)
                         if success:
-                            print(f"额外状态加载成功：{hasattr(model, 'image_anchors')}")
+                            print(f"Extra state loaded | model has image_anchors: {hasattr(model, 'image_anchors')}")
             else:
                 # 非 CL 方法：手动加载（原有逻辑）
                 assert(0)

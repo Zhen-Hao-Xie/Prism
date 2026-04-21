@@ -49,7 +49,7 @@ class HookManager:
             self.hook_registry[layer_path] = hook_fn
             
         except KeyError:
-            print(f"⚠️ Warning: Layer {layer_path} not found in model.")
+            print(f"Warning: Layer {layer_path} not found in model.")
     
     def register_module_hook(
         self, 

@@ -148,7 +148,7 @@ class ScienceQATaskAdapter(BaseInferenceAdapter):
         # 初始化文本模块（如果需要）
         if hasattr(context.model, 'initialize_text_modules'):
             context.model.initialize_text_modules(context.args)
-            print("✅ 文本模块初始化完成")
+            print("Text tower modules initialized")
 
         self._verify_anchors_loaded(context.model)
 
@@ -160,12 +160,12 @@ class ScienceQATaskAdapter(BaseInferenceAdapter):
                 missing.append(attr)
 
         if missing:
-            print(f"⚠️ Warning: Missing anchors: {missing}")
+            print(f"Warning: Missing anchors: {missing}")
         else:
             # 打印简要信息
             num_tasks = len(model.image_anchors) if hasattr(
                 model, 'image_anchors') else 0
-            print(f"✅ Anchors 已加载: {num_tasks} 个任务")
+            print(f"Anchors loaded for {num_tasks} tasks")
 
     def infer_one(self, sample: Dict[str, Any], context: InferenceContext) -> Dict[str, str]:
         return self.infer_batch([sample], context)[0]

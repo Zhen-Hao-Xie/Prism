@@ -81,7 +81,7 @@ class Hide_llavaIntegration(CLIntegration):
             param.requires_grad = False
 
         print(f"\n{'='*70}")
-        print(f"🔧 [HiDe] initialize_model 开始")
+        print("[HiDe] initialize_model start")
         
         # ========== 步骤 1: 加载/初始化 anchors ==========
         # 如果 anchors 已经有值（从 checkpoint 加载），不要重新初始化
@@ -90,9 +90,9 @@ class Hide_llavaIntegration(CLIntegration):
                 torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False)
                 for _ in range(self.task_num)
             ]).to(device)
-            print(f"  ✅ image_anchors 已初始化（随机）")
+            print("  image_anchors initialized (random)")
         else:
-            print(f"  ✅ image_anchors 已存在（从 checkpoint 加载）")
+            print("  image_anchors already present (from checkpoint)")
             for i, p in enumerate(self.image_anchors):
                 print(f"    task_{i}: L2_norm={p.norm().item():.4f}")
         
@@ -101,9 +101,9 @@ class Hide_llavaIntegration(CLIntegration):
                 torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False)
                 for _ in range(self.task_num)
             ]).to(device)
-            print(f"  ✅ text_anchors 已初始化（随机）")
+            print("  text_anchors initialized (random)")
         else:
-            print(f"  ✅ text_anchors 已存在（从 checkpoint 加载）")
+            print("  text_anchors already present (from checkpoint)")
         
         if self.image_boundary is None:
             self.image_boundary = torch.nn.ParameterList([
@@ -128,26 +128,26 @@ class Hide_llavaIntegration(CLIntegration):
 
         # ========== 关键：在 LoRA 配置完成后，强制冻结 anchors ==========
         # 因为 PEFT 可能会改变 requires_grad 状态
-        print(f"\n🔒 强制冻结 HiDe 状态参数...")
+        print("\nFreezing HiDe state parameters (anchors/boundaries)...")
         frozen_count = 0
         for name, param in model.named_parameters():
             if any(pattern in name for pattern in ['image_anchors', 'text_anchors', 'image_boundary', 'text_boundary']):
                 param.requires_grad = False
                 frozen_count += 1
-        print(f"  ✅ 已冻结 {frozen_count} 个 HiDe 状态参数")
+        print(f"  Froze {frozen_count} HiDe state parameters")
         # ===========================================================
 
         # ========== 步骤 4: 验证参数量 ==========
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         
-        print(f"\n🔍 [HiDe] 参数量验证:")
-        print(f"  总参数量：{total_params:,}")
-        print(f"  可训练参数量：{trainable_params:,}")
-        print(f"  可训练比例：{trainable_params / total_params * 100:.4f}%")
+        print("\n[HiDe] parameter count check:")
+        print(f"  total parameters: {total_params:,}")
+        print(f"  trainable parameters: {trainable_params:,}")
+        print(f"  trainable ratio: {trainable_params / total_params * 100:.4f}%")
         
         print(f"{'='*70}\n")
-        print(f"✅ HiDe 初始化完成 | 任务数：{self.task_num} | 特征维度：{self.feature_dim}")
+        print(f"HiDe initialization done | num_tasks: {self.task_num} | feature_dim: {self.feature_dim}")
     
     def _setup_hide_lora(self, model):
         """配置 HiDe MOE-LoRA"""
@@ -156,7 +156,7 @@ class Hide_llavaIntegration(CLIntegration):
             from PEFT.peft import HiDeMOELoraConfig, get_peft_model
             
             target_modules = self._find_target_modules(model)
-            print(f"    找到目标模块：{len(target_modules)} 个")
+            print(f"    target modules found: {len(target_modules)}")
             
             lora_config = HiDeMOELoraConfig(
                 target_modules=target_modules,
@@ -171,24 +171,24 @@ class Hide_llavaIntegration(CLIntegration):
             # 获取 CLModel 的_base_model 来应用 PEFT
             _base_model = getattr(model, '_base_model', None)
             if _base_model is not None:
-                print(f"    对 _base_model 应用 PEFT...")
+                print("    applying PEFT to _base_model...")
                 peft_model = get_peft_model(_base_model, lora_config)
                 # 更新 CLModel 的_base_model 引用
                 object.__setattr__(model, '_base_model', peft_model)
             else:
-                print(f"    对 model 直接应用 PEFT...")
+                print("    applying PEFT to model directly...")
                 peft_model = get_peft_model(model, lora_config)
             
             # 打印 PEFT 信息
             if hasattr(peft_model, 'print_trainable_parameters'):
                 peft_model.print_trainable_parameters()
             
-            print(f"  ✅ HiDe MOE-LoRA 配置完成")
+            print("  HiDe MOE-LoRA configured")
             
         except ImportError as e:
-            print(f"  ⚠️  未找到 HiDeMOELoraConfig，跳过 LoRA 配置：{e}")
+            print(f"  HiDeMOELoraConfig not available, skipping LoRA setup: {e}")
         except Exception as e:
-            print(f"  ❌ LoRA 配置失败：{e}")
+            print(f"  LoRA configuration failed: {e}")
             import traceback
             traceback.print_exc()
     
@@ -210,7 +210,7 @@ class Hide_llavaIntegration(CLIntegration):
                     module_type = name.split('.')[-1]
                     target_modules.add(module_type)
         
-        print(f"    找到目标模块类型：{list(target_modules)}")
+        print(f"    target module types: {list(target_modules)}")
         return list(target_modules)
     
     def on_input_prep(self, model, args, kwargs, context: CLContext):
@@ -241,7 +241,7 @@ class Hide_llavaIntegration(CLIntegration):
                     text_tower = getattr(_base_model.base_model, 'text_tower', None)
         
         if clip_tokenizer is None or text_tower is None:
-            print(f"⚠️ [HiDe] 跳过：clip_tokenizer 或 text_tower 为空")
+            print("[HiDe] skip routing: clip_tokenizer or text_tower is missing")
             return
         
         # ========== 修复：统一处理纯文本和多模态样本 ==========
@@ -254,7 +254,7 @@ class Hide_llavaIntegration(CLIntegration):
         # 多模态样本
         if images is not None:
             # 提取 CLIP 特征
-            #print(f"🔍 [HiDe] 多模态样本，提取特征...")
+            # print("[HiDe] multimodal sample: extract features...")
             image_guide_features, text_guide_features = self._extract_clip_features(
                 model, images, input_ids, clip_tokenizer, text_tower
             )
@@ -266,7 +266,7 @@ class Hide_llavaIntegration(CLIntegration):
                     context.task_id, context
                 )
             else:
-                print(f"🎯 推理模式：预测任务")
+                print("Inference: predicting task for multimodal batch")
                 # 推理模式：预测任务并传播
                 predicted_task_id = self._predict_task(
                     model, image_guide_features, text_guide_features, context
@@ -321,7 +321,7 @@ class Hide_llavaIntegration(CLIntegration):
                 decoded_inputs = clip_tokenizer.batch_decode(input_pad, skip_special_tokens=True)
                 decoded_hidden = ['\n'.join(d.split('\n')[1:]) for d in decoded_inputs]
                 decoded_clip = [d.split(' ASSISTANT')[0] for d in decoded_hidden]
-                print(f"⚠️ 使用 clip_tokenizer 回退解码")
+                print("Warning: using clip_tokenizer fallback for decode")
             
             # 打印解码文本（调试）
             #print(f"    decoded_clip[0][:100]: {decoded_clip[0][:100]}")
@@ -410,7 +410,7 @@ class Hide_llavaIntegration(CLIntegration):
         sim = torch.tensor(text_sims, device=device)
         predicted_task_id = int(torch.argmax(sim).item())
         
-        print(f"    所有相似度: {[f'{s:.4f}' for s in text_sims]}")
+        print(f"    text similarities: {[f'{s:.4f}' for s in text_sims]}")
         print(f"    argmax: {predicted_task_id}")
         
         return predicted_task_id
@@ -490,7 +490,7 @@ class Hide_llavaIntegration(CLIntegration):
             text_sims.append(sim)
         
         predicted_task_id = int(torch.argmax(torch.tensor(text_sims)).item())
-        print(f"✅ 纯文本路由：预测 task_id={predicted_task_id}")
+        print(f"Text-only routing: predicted task_id={predicted_task_id}")
         self._propagate_task_id(model, predicted_task_id)
     
     def on_forward_start(self,model, context: CLContext):
@@ -511,7 +511,7 @@ class Hide_llavaIntegration(CLIntegration):
         任务训练结束后：冻结当前任务的原型（可选）
         并保存状态
         """
-        print(f"✅ HiDe 任务 {task_id} 完成 | 原型已更新")
+        print(f"HiDe task {task_id} finished | prototypes updated in training loop")
     
     def get_inference_config(self) -> Dict:
         """返回推理时需要的配置"""
@@ -531,7 +531,7 @@ class Hide_llavaIntegration(CLIntegration):
         
         os.makedirs(output_dir, exist_ok=True)
         
-        print(f"🔍 [HiDe] 保存额外状态到 {output_dir}...")
+        print(f"[HiDe] saving extra state to {output_dir}...")
         
         # 收集 anchors 和 boundaries
         state = {}
@@ -539,26 +539,26 @@ class Hide_llavaIntegration(CLIntegration):
         # 图像 anchors - 保存所有 8 个任务
         if self.image_anchors is not None:
             state['image_anchors'] = [p.cpu().clone() for p in self.image_anchors]
-            print(f"  ✅ image_anchors: {len(self.image_anchors)} 个任务")
+            print(f"  image_anchors: {len(self.image_anchors)} tasks")
             for i, p in enumerate(self.image_anchors):
                 print(f"    task_{i}: norm={p.norm().item():.4f}")
         
         # 文本 anchors - 保存所有 8 个任务
         if self.text_anchors is not None:
             state['text_anchors'] = [p.cpu().clone() for p in self.text_anchors]
-            print(f"  ✅ text_anchors: {len(self.text_anchors)} 个任务")
+            print(f"  text_anchors: {len(self.text_anchors)} tasks")
             for i, p in enumerate(self.text_anchors):
                 print(f"    task_{i}: norm={p.norm().item():.4f}")
         
         # 图像 boundaries
         if self.image_boundary is not None:
             state['image_boundary'] = [p.cpu().clone() for p in self.image_boundary]
-            print(f"  ✅ image_boundary: {len(self.image_boundary)} 个任务")
+            print(f"  image_boundary: {len(self.image_boundary)} tasks")
         
         # 文本 boundaries
         if self.text_boundary is not None:
             state['text_boundary'] = [p.cpu().clone() for p in self.text_boundary]
-            print(f"  ✅ text_boundary: {len(self.text_boundary)} 个任务")
+            print(f"  text_boundary: {len(self.text_boundary)} tasks")
         
         # 保存元数据（保留 expert_num 键以兼容旧 checkpoint 读取逻辑）
         state["task_num"] = self.task_num
@@ -569,11 +569,11 @@ class Hide_llavaIntegration(CLIntegration):
         if state:
             save_path = os.path.join(output_dir, 'hide_state.pt')
             torch.save(state, save_path)
-            print(f"✅ HiDe 状态已保存：{save_path}")
-            print(f"   文件大小：{os.path.getsize(save_path) / 1024 / 1024:.2f} MB")
+            print(f"HiDe state saved: {save_path}")
+            print(f"   file size: {os.path.getsize(save_path) / 1024 / 1024:.2f} MB")
             return True
         else:
-            print(f"⚠️  HiDe 状态为空，未保存")
+            print("HiDe state dict empty; nothing saved")
             return False
     
     # method/hide_llava/integration.py
@@ -585,38 +585,38 @@ class Hide_llavaIntegration(CLIntegration):
         
         load_path = os.path.join(load_dir, 'hide_state.pt')
         if not os.path.exists(load_path):
-            print(f"⚠️  未找到 HiDe 状态文件：{load_path}")
+            print(f"HiDe state file not found: {load_path}")
             return False
         
         print(f"\n{'='*70}")
-        print(f"🔍 [HiDe] 加载额外状态从 {load_path}...")
+        print(f"[HiDe] loading extra state from {load_path}...")
         print(f"{'='*70}")
         
         state = torch.load(load_path, map_location='cpu')
         
         # ========== 打印加载的 anchors 范数 ==========
-        print(f"\n📊 加载的 image_anchors 范数:")
+        print("\nLoaded image_anchors L2 norms:")
         if 'image_anchors' in state:
             for i, p in enumerate(state['image_anchors']):
                 norm = torch.norm(p).item()
                 print(f"    task_{i}: {norm:.4f}")
         else:
-            print(f"    ⚠️ 没有 image_anchors")
+            print("    no image_anchors in checkpoint")
         
-        print(f"\n📊 加载的 text_anchors 范数:")
+        print("\nLoaded text_anchors L2 norms:")
         if 'text_anchors' in state:
             for i, p in enumerate(state['text_anchors']):
                 norm = torch.norm(p).item()
                 print(f"    task_{i}: {norm:.4f}")
         else:
-            print(f"    ⚠️ 没有 text_anchors")
+            print("    no text_anchors in checkpoint")
         
-        print(f"\n📊 加载的 image_boundary:")
+        print("\nLoaded image_boundary:")
         if 'image_boundary' in state:
             for i, b in enumerate(state['image_boundary']):
                 print(f"    task_{i}: {b.item():.2f}")
         
-        print(f"\n📊 加载的 text_boundary:")
+        print("\nLoaded text_boundary:")
         if 'text_boundary' in state:
             for i, b in enumerate(state['text_boundary']):
                 print(f"    task_{i}: {b.item():.2f}")
@@ -627,14 +627,14 @@ class Hide_llavaIntegration(CLIntegration):
             for i, p in enumerate(state['image_anchors']):
                 if i < len(self.image_anchors):
                     self.image_anchors[i].data.copy_(p)
-            print(f"\n  ✅ image_anchors 已恢复")
+            print("\n  image_anchors restored from checkpoint")
         
         # 恢复文本 anchors
         if 'text_anchors' in state and self.text_anchors is not None:
             for i, p in enumerate(state['text_anchors']):
                 if i < len(self.text_anchors):
                     self.text_anchors[i].data.copy_(p)
-            print(f"  ✅ text_anchors 已恢复")
+            print("  text_anchors restored from checkpoint")
         
         # 恢复 boundaries
         if 'image_boundary' in state and self.image_boundary is not None:
@@ -648,7 +648,7 @@ class Hide_llavaIntegration(CLIntegration):
         
         # 设置到 model
         if model is not None:
-            print(f"\n  🔧 设置 anchors 到 model...")
+            print("\n  attaching anchors to model...")
             if self.image_anchors is not None:
                 object.__setattr__(model, 'image_anchors', self.image_anchors)
             if self.text_anchors is not None:
@@ -657,9 +657,9 @@ class Hide_llavaIntegration(CLIntegration):
                 object.__setattr__(model, 'image_boundary', self.image_boundary)
             if self.text_boundary is not None:
                 object.__setattr__(model, 'text_boundary', self.text_boundary)
-            print(f"  ✅ anchors 已直接设置到 model")
+            print("  anchors attached on model")
         
-        print(f"\n✅ HiDe 状态已加载：{load_path}")
+        print(f"\nHiDe state loaded: {load_path}")
         print(f"{'='*70}\n")
         return True
 
@@ -671,7 +671,7 @@ class Hide_llavaIntegration(CLIntegration):
             # 纯文本：使用预设 task_id
             task_id = context.task_id if context and context.task_id is not None else 0
             self._propagate_task_id(model, task_id)
-            print(f"✅ 纯文本：使用 task_id={task_id}")
+            print(f"Text-only batch: using task_id={task_id}")
             return True
         
         
@@ -687,7 +687,7 @@ class Hide_llavaIntegration(CLIntegration):
                 text_tower = getattr(_base_model, 'text_tower', None)
         
         if clip_tokenizer is None or text_tower is None:
-            print(f"⚠️ [HiDe] 无法获取 tokenizer/text_tower，使用默认 task_id=0")
+            print("[HiDe] tokenizer/text_tower unavailable; defaulting to task_id=0")
             self._propagate_task_id(model, 0)
             return True
         

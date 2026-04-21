@@ -468,29 +468,32 @@ class SameIntegration(CLIntegration):
             k in state and isinstance(state[k], (list, tuple)) and len(state[k]) > 0 for k in anchor_keys
         )
 
-        print(f"\n[SAME] same_state.bin 已处理: {path}")
-        print(f"  文件中 anchors 相关键: {keys_in_file if keys_in_file else '(无)'}")
+        print(f"\n[SAME] same_state.bin loaded from: {path}")
+        print(f"  anchor-related keys in file: {keys_in_file if keys_in_file else '(none)'}")
 
         if self.image_anchors is not None:
-            print("  image_anchors（当前内存，L2 范数）:")
+            print("  image_anchors (in memory, L2 norm):")
             for i, p in enumerate(self.image_anchors):
                 n = float(p.detach().float().norm().item())
                 print(f"    expert {i}: {n:.4f}")
         if self.text_anchors is not None:
-            print("  text_anchors（当前内存，L2 范数）:")
+            print("  text_anchors (in memory, L2 norm):")
             for i, p in enumerate(self.text_anchors):
                 n = float(p.detach().float().norm().item())
                 print(f"    expert {i}: {n:.4f}")
         if self.image_boundary is not None:
-            print("  image_boundary（计数）:")
+            print("  image_boundary (count):")
             for i, p in enumerate(self.image_boundary):
                 print(f"    expert {i}: {float(p.detach().item()):.4f}")
         if self.text_boundary is not None:
-            print("  text_boundary（计数）:")
+            print("  text_boundary (count):")
             for i, p in enumerate(self.text_boundary):
                 print(f"    expert {i}: {float(p.detach().item()):.4f}")
         if nonempty_in_file:
-            print("  ✅ 文件中包含非空 anchors/boundary 列表，已写入 integration。")
+            print("  Non-empty anchors/boundary tensors from file merged into integration.")
         else:
-            print("  ⚠️ 文件中无 anchors 数据；上列为 initialize 初值（需训练原型请用新版本重新保存 same_state.bin）。")
+            print(
+                "  No anchor data in file; values above are initialization defaults "
+                "(re-save same_state.bin with a newer version if you need trained prototypes)."
+            )
 

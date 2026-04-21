@@ -51,10 +51,10 @@ class CLModel(nn.Module):
         trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
         trainable_ratio = trainable_params / total_params * 100 if total_params > 0 else 0
 
-        print(f"✅ CLModel 初始化完成 | 方法：{integration.__class__.__name__}")
-        print(f"✅ CLModel 总参数量：{total_params:,} 个参数")
-        print(f"✅ CLModel 可训练参数量：{trainable_params:,} 个参数")
-        print(f"✅ 可训练参数占比：{trainable_ratio:.4f}%")
+        print(f"CLModel initialized | integration: {integration.__class__.__name__}")
+        print(f"CLModel total parameters: {total_params:,}")
+        print(f"CLModel trainable parameters: {trainable_params:,}")
+        print(f"CLModel trainable ratio: {trainable_ratio:.4f}%")
     
 
     def __getattr__(self, name: str):
@@ -197,7 +197,7 @@ class CLModel(nn.Module):
         _base_model = object.__getattribute__(self, '_base_model')
         text_tower = self._get_attr_recursive('text_tower')
         if text_tower is None:
-            print(f"  ⚠️  text_tower 未找到，HiDe 文本路由将跳过")
+            print("  text_tower not found; HiDe text routing will be skipped")
 
         
         if text_tower is None:
@@ -295,7 +295,7 @@ class CLModel(nn.Module):
     def cleanup(self) -> None:
         if hasattr(self._integration, 'hook_manager'):
             self._integration.hook_manager.remove_all()
-        print("✅ CLModel 资源已清理")
+        print("CLModel resources cleaned up")
 
     # method/base/cl_model.py
     def pre_generate_hook(self, model, input_ids, images, context) -> bool:
