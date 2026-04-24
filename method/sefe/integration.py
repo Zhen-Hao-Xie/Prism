@@ -12,6 +12,7 @@ import logging
 from method.base.context import CLContext
 from method.base.integration import CLIntegration
 from method.base.peft_extension import register_peft_extension
+from method.base.peft_llm_targets import should_skip_module_for_peft_scan
 from method.factory import CLMethodFactory
 
 _PEFT_EXT_REGISTERED = False
@@ -81,6 +82,7 @@ class SefeIntegration(CLIntegration):
             sefe_top_p=self.sefe_top_p,
             sefe_lambda_reg=self.sefe_lambda_reg,
             task_type="CAUSAL_LM",  # Using base PEFT type string mapped to PeftModelForCausalLM
+            exclude_module_path_segments=self.peft_exclude_module_path_segments,
         )
 
         _base = getattr(model, "_base_model", None) or model
@@ -98,6 +100,8 @@ class SefeIntegration(CLIntegration):
         target_modules = set()
         _base_model = getattr(model, "_base_model", None) or model
         for name, module in _base_model.named_modules():
+            if should_skip_module_for_peft_scan(name, self.config):
+                continue
             if isinstance(module, torch.nn.Linear) and any(x in name for x in ("q_proj", "k_proj", "v_proj", "o_proj")):
                 target_modules.add(name.split(".")[-1])
         return list(target_modules)

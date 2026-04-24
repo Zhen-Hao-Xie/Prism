@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from method.base.context import CLContext
 from method.base.integration import CLIntegration
 from method.base.peft_extension import register_peft_extension
+from method.base.peft_llm_targets import should_skip_module_for_peft_scan
 from method.factory import CLMethodFactory
 
 _PEFT_EXT_REGISTERED = False
@@ -119,6 +120,7 @@ class SameIntegration(CLIntegration):
             expert_num=self.task_num,
             cur_task=int(getattr(self.config, "cur_task", self.cur_task)),
             task_type="CAUSAL_LM",
+            exclude_module_path_segments=self.peft_exclude_module_path_segments,
         )
 
         _base_model = getattr(model, "_base_model", None)
@@ -132,6 +134,8 @@ class SameIntegration(CLIntegration):
         target_modules = set()
         _base_model = getattr(model, "_base_model", None) or model
         for name, module in _base_model.named_modules():
+            if should_skip_module_for_peft_scan(name, self.config):
+                continue
             if isinstance(module, torch.nn.Linear) and any(x in name for x in ("q_proj", "k_proj", "v_proj", "o_proj")):
                 target_modules.add(name.split(".")[-1])
         return list(target_modules)

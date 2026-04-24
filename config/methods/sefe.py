@@ -1,11 +1,11 @@
 """
-Defaults for method: moelora
+Defaults for method: sefe（SEFE RegLoRA）
 """
 
 from config.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
-    "--method": "moelora",
+    "--method": "sefe",
     "--lora_r": "64",
     "--lora_alpha": "128",
     "--mm_projector_lr": "2e-5",
@@ -21,35 +21,20 @@ TRAIN_FLAG_OVERRIDES = {
 TRAIN_EXTRA_ARGS: list[str] = []
 
 INFER_DEFAULTS = {
-    "clmethod": "moelora",
-    "batch_size": 12,
+    "clmethod": "sefe",
+    "batch_size": 8,
 }
 
 TRAIN_BATCH_SIZES = {
-    "coin": {
-        0: 12,
-        1: 12,
-        2: 12,
-        3: 12,
-        4: 12,
-        5: 12,
-        6: 12,
-        7: 12,
-    },
-    "ucit": {
-        0: 12,
-        1: 12,
-        2: 12,
-        3: 12,
-        4: 12,
-        5: 12,
-    },
+    "coin": {i: 8 for i in range(8)},
+    "ucit": {i: 8 for i in range(6)},
 }
 
 METHOD_CONFIG = {
-    "cur_task": 0,
     "lora_r": 64,
     "lora_alpha": 128,
     "lora_dropout": 0.05,
+    "sefe_top_p": 0.02,
+    "sefe_lambda_reg": 2500.0,
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
 }

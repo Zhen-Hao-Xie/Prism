@@ -9,7 +9,7 @@ Rule:
 # ===== Argument defaults (train) =====
 TRAIN_DEFAULTS = {
     "benchmark": "ucit",
-    "gpus": "0,1",
+    "gpus": "0,1,2,3",
     "port": 29602,
     # True → training subprocess gets PYMCIT_LOG_LEVEL=DEBUG (see run.py / train.py). Does not change batch size.
     "debug": False,

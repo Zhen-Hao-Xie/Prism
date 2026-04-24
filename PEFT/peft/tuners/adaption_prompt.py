@@ -25,6 +25,8 @@ import torch.nn.functional as F
 from peft.utils.config import PeftConfig, PeftType
 from peft.utils.other import _freeze_adapter, _get_submodules
 
+from ..utils.llava_peft_scope import should_skip_peft_path
+
 
 def llama_rotate_half(x: torch.Tensor) -> torch.Tensor:
     """
@@ -174,6 +176,9 @@ class AdaptionPromptModel(nn.Module):
 
         parents = []
         for name, _ in self.model.named_modules():
+            excl = getattr(config, "exclude_module_path_segments", None)
+            if should_skip_peft_path(name, excl):
+                continue
             if name.endswith(config.target_modules):
                 par, _, _ = _get_submodules(self.model, name)
                 parents.append(par)

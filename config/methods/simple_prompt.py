@@ -2,6 +2,8 @@
 Defaults for method: simple_prompt
 """
 
+from config.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
+
 TRAIN_FLAG_OVERRIDES = {
     "--method": "simple_prompt",
     "--mm_projector_lr": "2e-5",
@@ -47,4 +49,5 @@ TRAIN_BATCH_SIZES = {
 METHOD_CONFIG = {
     "clip_feature_dim": 768,
     "num_prompt_tokens": 256,
+    "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
 }

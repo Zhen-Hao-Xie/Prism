@@ -19,6 +19,8 @@ import warnings
 
 import torch
 
+from .llava_peft_scope import should_skip_peft_path
+
 
 # Add or edit model card to have `library_name: peft`
 def add_library_to_model_card(output_dir):
@@ -160,8 +162,14 @@ def _freeze_adapter(model, adapter_name):
 
 
 def _set_trainable(model, adapter_name):
+    excl = None
+    pc = getattr(model, "peft_config", None)
+    if isinstance(pc, dict) and adapter_name in pc:
+        excl = getattr(pc[adapter_name], "exclude_module_path_segments", None)
     key_list = [key for key, _ in model.named_modules()]
     for key in key_list:
+        if should_skip_peft_path(key, excl):
+            continue
         target_module_found = any(key.endswith(target_key) for target_key in model.modules_to_save)
         if target_module_found:
             parent, target, target_name = _get_submodules(model, key)

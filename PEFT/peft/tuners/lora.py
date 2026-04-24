@@ -36,6 +36,7 @@ from ..utils import (
     _get_submodules,
     transpose,
 )
+from ..utils.llava_peft_scope import should_skip_peft_path
 
 
 if is_bnb_available():
@@ -210,6 +211,9 @@ class LoraModel(torch.nn.Module):
             )
 
     def _check_target_module_exists(self, lora_config, key):
+        excl = getattr(lora_config, "exclude_module_path_segments", None)
+        if should_skip_peft_path(key, excl):
+            return False
         if isinstance(lora_config.target_modules, str):
             target_module_found = re.fullmatch(lora_config.target_modules, key)
         else:

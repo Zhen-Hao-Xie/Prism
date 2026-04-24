@@ -16,6 +16,7 @@ from ..utils import (
     _get_submodules,
     transpose,
 )
+from ..utils.llava_peft_scope import should_skip_peft_path
 from .lora import (
     LoraConfig,
     LoraLayer,
@@ -140,7 +141,10 @@ class AdaLoraModel(LoraModel):
             "init_lora_weights": lora_config.init_lora_weights,
         }
         key_list = [key for key, _ in self.model.named_modules()]
+        _excl = getattr(lora_config, "exclude_module_path_segments", None)
         for key in key_list:
+            if should_skip_peft_path(key, _excl):
+                continue
             if isinstance(lora_config.target_modules, str):
                 target_module_found = re.fullmatch(lora_config.target_modules, key)
             else:

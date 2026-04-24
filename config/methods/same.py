@@ -1,6 +1,10 @@
 """
 Defaults for method: same
+
+可选 ``METHOD_CONFIG["exclude_module_path_segments"]`` 控制 PEFT 注入路径；默认已设为仅 LLM 注入。
 """
+
+from config.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "same",
@@ -62,6 +66,7 @@ METHOD_CONFIG = {
     "remaining_prob": 0.85,
     "other_total_prob": 0.15,
     "top2_ratio": [3.0, 2.0],
+    "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
 }
 
 

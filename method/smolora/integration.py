@@ -24,6 +24,7 @@ import torch
 from method.base.context import CLContext
 from method.base.integration import CLIntegration
 from method.base.peft_extension import register_peft_extension
+from method.base.peft_llm_targets import should_skip_module_for_peft_scan
 from method.factory import CLMethodFactory
 
 _PEFT_EXT_REGISTERED = False
@@ -131,6 +132,7 @@ class SmoloraIntegration(CLIntegration):
             ins_type=int(getattr(self.config, "cur_task", self._default_ins_type)),
             ins_emb_dim=self.ins_emb_dim,
             ins_emb=self._author_ins_emb_list,
+            exclude_module_path_segments=self.peft_exclude_module_path_segments,
         )
 
         _base_model = getattr(model, "_base_model", None)
@@ -152,10 +154,9 @@ class SmoloraIntegration(CLIntegration):
         """
         target_modules: set = set()
         _base_model = getattr(model, "_base_model", None) or model
-        skip = ("vision_tower", "text_tower", "mm_projector", "vision_resampler")
         attn_suffix = {"q_proj", "k_proj", "v_proj", "o_proj"}
         for name, module in _base_model.named_modules():
-            if any(s in name for s in skip):
+            if should_skip_module_for_peft_scan(name, self.config):
                 continue
             if isinstance(module, torch.nn.Linear) and name.split(".")[-1] in attn_suffix:
                 target_modules.add(name.split(".")[-1])

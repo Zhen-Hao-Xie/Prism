@@ -143,6 +143,7 @@ class Simple_promptIntegration(CLIntegration):
             num_prompt_tokens=self.num_prompt_tokens,
             cur_task=int(getattr(self.config, "cur_task", self.cur_task)),
             inference_mode=False,
+            exclude_module_path_segments=self.peft_exclude_module_path_segments,
         )
 
         if getattr(model, "_base_model", None) is not None:

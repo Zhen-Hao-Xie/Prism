@@ -85,6 +85,12 @@ class ModelArguments:
         default="hide_llava",
         metadata={"help": "CL method: hide_llava / same / simple_prompt / smolora 等"},
     )
+    exclude_module_path_segments: Optional[Any] = field(
+        default=None,
+        metadata={
+            "help": "PEFT 路径过滤：None=LLaVA 默认跳过 CLIP/mm_projector 等；[]=关闭；非空 list 为自定义跳过分段名。也可写在 config/methods/<method>.py 的 METHOD_CONFIG。",
+        },
+    )
 
 @dataclass
 class DataArguments:

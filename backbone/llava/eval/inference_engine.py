@@ -40,13 +40,12 @@ class InferenceEngine:
 
     def _load_model(self, args: Any) -> Tuple[Any, Any, Any, str]:
         model_path = os.path.expanduser(args.model_path)
-        model_name = getattr(args, "model_name",
-                             None) or get_model_name_from_path(model_path)
+        model_name = getattr(args, "model_name",None) or get_model_name_from_path(model_path)
         tokenizer, model, image_processor, _ = load_model_for_inference(
             model_path,
             args.model_base,
             model_name,
-            method=args.clmethod,  # ← 关键：传入 method 参数
+            method=args.clmethod, 
             text_tower=getattr(args, "text_tower", None),
             benchmark=getattr(args, "benchmark", None),
             task_num=getattr(args, "cl_task_num", None),

@@ -4,7 +4,7 @@ CL 方法与模型集成的统一接口
 每个方法 (SP, HiDe-LLaVA, RanPAC, SEFE) 都需要实现这个接口
 """
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import torch.nn as nn
 import torch
 
@@ -19,7 +19,16 @@ class CLIntegration(ABC):
     
     def __init__(self, config: Any):
         self.config = config
-        
+
+    @property
+    def peft_exclude_module_path_segments(self) -> Optional[List[str]]:
+        """
+        与 ``PEFT.peft.utils.config.PeftConfig.exclude_module_path_segments`` 一致：
+        ``None`` 使用 LLaVA 默认跳过集；``[]`` 关闭路径过滤；非空列表为自定义跳过分段名。
+        在 ``config/methods/<method>.py`` 的 ``METHOD_CONFIG`` 中设置 ``exclude_module_path_segments``。
+        """
+        return getattr(self.config, "exclude_module_path_segments", None)
+
     @abstractmethod
     def initialize_model(self, model: nn.Module) -> None:
         """

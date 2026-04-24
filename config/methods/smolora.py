@@ -6,6 +6,8 @@
 否则 CLIP ``text_tower``（需 ``clip_feature_dim``，通常 768）。
 """
 
+from config.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
+
 TRAIN_FLAG_OVERRIDES = {
     "--method": "smolora",
     "--lora_r": "64",
@@ -46,4 +48,5 @@ METHOD_CONFIG = {
     "lora_alpha": 128,
     "lora_dropout": 0.05,
     "lora_bias": "none",
+    "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
 }

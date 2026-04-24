@@ -17,7 +17,7 @@ import inspect
 import json
 import os
 from dataclasses import asdict, dataclass, field
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 from huggingface_hub import hf_hub_download
 from transformers.utils import PushToHubMixin
@@ -211,6 +211,15 @@ class PeftConfig(PeftConfigMixin):
     peft_type: Union[str, PeftType] = field(default=None, metadata={"help": "Peft type"})
     task_type: Union[str, TaskType] = field(default=None, metadata={"help": "Task type"})
     inference_mode: bool = field(default=False, metadata={"help": "Whether to use inference mode"})
+    exclude_module_path_segments: Optional[List[str]] = field(
+        default=None,
+        metadata={
+            "help": "Path segments (split on '.') — if any appear in a module's full name, skip PEFT there. "
+            "None: LLaVA default (CLIP towers, mm_projector, vision_resampler). "
+            "Empty list []: disable path-based exclusion. "
+            "Non-empty: skip only branches whose segment name is in this list."
+        },
+    )
 
 
 @dataclass

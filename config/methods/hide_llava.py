@@ -1,6 +1,11 @@
 """
 Defaults for method: hide_llava
+
+PEFT 路径过滤：本文件 ``METHOD_CONFIG`` 已显式设为仅 LLM 主干注入（``config.peft_scope_defaults``）。
+若要改为全模型可注入，将 ``exclude_module_path_segments`` 设为 ``[]``；自定义跳过列表见 ``config/methods/README.md``。
 """
+
+from config.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 # These are merged on top of config/run_config.py
 
@@ -56,4 +61,6 @@ METHOD_CONFIG = {
     "lora_r": 64,
     "lora_alpha": 128,
     "lora_dropout": 0.05,
+    # 显式：仅 LLM 主干注入（与 PEFT 默认 None 等价，便于各方法配置一致）
+    "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
 }

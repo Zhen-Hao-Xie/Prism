@@ -8,6 +8,7 @@ from method.base.context import CLContext
 from method.base.hooks import HookManager
 from method.factory import CLMethodFactory
 from method.base.peft_extension import register_peft_extension
+from method.base.peft_llm_targets import should_skip_module_for_peft_scan
 import torch
 import torch.nn.functional as F
 from typing import Any, Dict, Optional, List, Tuple
@@ -166,6 +167,7 @@ class Hide_llavaIntegration(CLIntegration):
                 expert_num=self.task_num,
                 cur_task=getattr(self.config, 'cur_task', 0),
                 task_type="CAUSAL_LM",
+                exclude_module_path_segments=self.peft_exclude_module_path_segments,
             )
             
             # 获取 CLModel 的_base_model 来应用 PEFT
@@ -201,8 +203,10 @@ class Hide_llavaIntegration(CLIntegration):
         if _base_model is None:
             _base_model = model
         
-        # 只查找 Linear 层
+        # 只查找 Linear 层；路径过滤由 ``exclude_module_path_segments`` 配置（默认跳过 CLIP / projector 等）
         for name, module in _base_model.named_modules():
+            if should_skip_module_for_peft_scan(name, self.config):
+                continue
             # 关键修复：只处理 Linear 层
             if isinstance(module, torch.nn.Linear):
                 if any(x in name for x in ['q_proj', 'k_proj', 'v_proj', 'o_proj']):
