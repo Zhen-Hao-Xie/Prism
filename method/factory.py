@@ -2,7 +2,7 @@
 """
 持续学习方法工厂
 根据配置自动实例化不同的 CL 方法
-支持自动发现 method/*/integration.py 中的方法实现。
+支持自动发现 method/custom/*/integration.py 中的方法实现。
 """
 from typing import Any, Dict, Optional, Set
 import importlib

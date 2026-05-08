@@ -1,0 +1,18 @@
+"""项目路径（单一配置，不再区分 base / instruct）。"""
+from pathlib import Path
+
+PROJECT_ROOT = str(Path(__file__).parent.parent.parent.absolute())
+
+BASE_MODEL_PATH = "/root/autodl-tmp/LLaVa"
+CLIP_PATH = "/root/autodl-tmp/CLIP"
+MCIT_ROOT = "/root/autodl-tmp/MCIT"
+
+PRETRAIN_MM_PROJECTOR = f"{BASE_MODEL_PATH}/mm_projector.bin"
+INSTRUCTION_DIR = f"{MCIT_ROOT}/instructions"
+IMAGE_FOLDER = f"{MCIT_ROOT}/datasets"
+
+CHECKPOINT_DIR = f"{PROJECT_ROOT}/checkpoints"
+RESULT_DIR = f"{PROJECT_ROOT}/results"
+LOG_DIR = f"{PROJECT_ROOT}/logs"
+
+DEEPSPEED_CONFIG = f"{PROJECT_ROOT}/config/deepspeed/zero2.json"

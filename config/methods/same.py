@@ -2,14 +2,14 @@
 Defaults for method: same
 
 可选 ``METHOD_CONFIG["exclude_module_path_segments"]`` 控制 PEFT 注入路径；默认已设为仅 LLM 注入。
+
+``peft_target_modules``：本方法默认 **仅 FFN**（``gate_proj`` / ``up_proj`` / ``down_proj``）；可用 ``METHOD_CONFIG`` 或 ``--peft_target_modules`` 覆盖，见 ``PEFT/utils/peft_target_modules.py``。
 """
 
-from config.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
+from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "same",
-    "--lora_r": "64",
-    "--lora_alpha": "128",
     "--mm_projector_lr": "2e-5",
     "--num_train_epochs": "1",
     "--learning_rate": "2e-4",
@@ -22,11 +22,8 @@ TRAIN_FLAG_OVERRIDES = {
 
 TRAIN_EXTRA_ARGS: list[str] = []
 
-# NOTE: backbone eval currently doesn't accept "same" in --clmethod choices,
-# so this is mostly for consistency; set it if/when you add it to CLI.
 INFER_DEFAULTS = {
-    "clmethod": "same",
-    # Batch size for `backbone.llava.eval.model_unified` (InferenceEngine)
+    # Batch size for `backbone.shared.eval.model_unified` (InferenceEngine)
     "batch_size": 1,
 }
 
@@ -52,21 +49,27 @@ TRAIN_BATCH_SIZES = {
     },
 }
 
-# Method parameters (was in same.yaml)
 METHOD_CONFIG = {
-    "clip_feature_dim": 768,
-    "cur_task": 0,
-    "lora_r": 64,
-    "lora_alpha": 128,
     "lora_dropout": 0.05,
-    "routing_temperature": 1.0,
-    "temparature": 2.0,
-    "temparature_2": 1.5,
-    "threshold": 0.85,
-    "remaining_prob": 0.85,
-    "other_total_prob": 0.15,
-    "top2_ratio": [3.0, 2.0],
+    "peft_target_modules": "ffn",
+    # SAME PEFT 层内谱 / 曲率相关超参（见 PEFT.tuners.custom.same.SAMELinear）
+    "tau_score": 0.1,
+    "curvature_mu": 0.9,
+    "window_size": 3,
+    "max_components": 64,
+    # 累积奇异值能量占比阈值，用于选取主方向（原默认 0.9）
+    "cumulative_energy_ratio": 0.9,
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
 }
 
 
+METHOD_CONFIG_BY_BENCHMARK = {
+    "coin": {
+        "lora_r": 64,
+        "lora_alpha": 128,
+    },
+    "ucit": {
+        "lora_r": 48,
+        "lora_alpha": 96,
+    },
+}

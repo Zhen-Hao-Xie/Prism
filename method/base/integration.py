@@ -23,7 +23,7 @@ class CLIntegration(ABC):
     @property
     def peft_exclude_module_path_segments(self) -> Optional[List[str]]:
         """
-        与 ``PEFT.peft.utils.config.PeftConfig.exclude_module_path_segments`` 一致：
+        与 ``PEFT.utils.config.PeftConfig.exclude_module_path_segments`` 一致：
         ``None`` 使用 LLaVA 默认跳过集；``[]`` 关闭路径过滤；非空列表为自定义跳过分段名。
         在 ``config/methods/<method>.py`` 的 ``METHOD_CONFIG`` 中设置 ``exclude_module_path_segments``。
         """

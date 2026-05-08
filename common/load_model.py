@@ -3,7 +3,7 @@ import transformers
 from typing import Tuple, Optional
 import os
 import importlib  # ← 在文件顶部添加
-from .load_backbone import (
+from backbone.shared.model_loading import (
     setup_quantization,
     load_pretrained_model,
     load_tokenizer,
@@ -14,15 +14,15 @@ from .load_backbone import (
     prepare_model_for_kbit,
     setup_gradient_checkpointing,
 )
-from .load_checkpoint import load_from_checkpoint
-from .load_config import (
+from .config_loader import (
     ModelArguments,
     DataArguments,
     TrainingArguments,
     merge_benchmark_task_num_into,
     merge_method_config_into,
 )
-from config.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from config.backbone.llava import CLIP_FEATURE_DIM
+from config.backbones.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 import shutil
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 import torch
@@ -39,11 +39,154 @@ def _try_import_cl_components():
         return CLModel, CLIntegration
     except ImportError:
         return None, None
+
+
+def load_from_checkpoint(model, checkpoint_path, merge_lora=False, for_incremental_training=False):
+    """从 checkpoint 加载模型权重"""
+    import json
+
+    print(f"Loading checkpoint from {checkpoint_path}...")
+    print(f"  for_incremental_training: {for_incremental_training}")
+
+    # ========== 找到 PEFT 模型 ==========
+    lora_target = model
+    if hasattr(model, '_base_model'):
+        print("  Detected CLModel wrapper")
+        lora_target = model._base_model
+
+    print(f"  LoRA target model type: {type(lora_target)}")
+    print(f"  has load_adapter: {hasattr(lora_target, 'load_adapter')}")
+
+    # ========== 加载 non-LoRA 权重 ==========
+    non_lora_path = os.path.join(checkpoint_path, 'non_lora_trainables.bin')
+    if os.path.exists(non_lora_path):
+        print("  Loading non-LoRA weights...")
+        non_lora_weights = torch.load(non_lora_path, map_location='cpu')
+
+        target = lora_target
+        if hasattr(target, 'base_model'):
+            target = target.base_model
+        if hasattr(target, 'model'):
+            target = target.model
+
+        target.load_state_dict(non_lora_weights, strict=False)
+        print("    non-LoRA weights loaded")
+
+    # ========== 加载 LoRA 权重 ==========
+    if for_incremental_training:
+        # 增量训练：使用 load_adapter
+        if hasattr(lora_target, 'load_adapter'):
+            if os.path.isdir(checkpoint_path):
+                print("\n  Loading LoRA adapter (incremental training mode)...")
+                print(f"      checkpoint_path: {checkpoint_path}")
+                lora_target.load_adapter(checkpoint_path, adapter_name='default')
+                print("    LoRA adapter loaded")
+        else:
+            print("  Model has no load_adapter method")
+
+    # ========== 推理模式：也使用 load_adapter ==========
+    else:
+        print("\n  Inference mode: trying load_adapter...")
+        if hasattr(lora_target, 'load_adapter'):
+            if os.path.isdir(checkpoint_path):
+                print(f"      load_adapter({checkpoint_path}, adapter_name='default')")
+
+                # 检查 adapter_config.json
+                config_path = os.path.join(checkpoint_path, 'adapter_config.json')
+                if os.path.exists(config_path):
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    print(f"      adapter_config peft_type: {config.get('peft_type', 'unknown')}")
+
+                lora_target.load_adapter(checkpoint_path, adapter_name='default')
+                print("    load_adapter finished")
+            else:
+                print("    Checkpoint is not a directory, falling back to manual LoRA load...")
+                _manual_load_lora(lora_target, checkpoint_path)
+        else:
+            print("    Model has no load_adapter, loading LoRA manually...")
+            _manual_load_lora(lora_target, checkpoint_path)
+
+    # ========== 检查专家权重 ==========
+    expert_norms = {}
+    for name, param in lora_target.named_parameters():
+        if 'lora' in name.lower():
+            import re
+            # 匹配 loraA.0, loraA.1 等格式
+            match = re.search(r'loraA\.(\d+)', name)
+            if match:
+                expert_id = match.group(1)
+                if expert_id not in expert_norms:
+                    expert_norms[expert_id] = []
+                expert_norms[expert_id].append(param.norm().item())
+
+    for expert_id in sorted(expert_norms.keys())[:4]:
+        if expert_norms[expert_id]:
+            avg_norm = sum(expert_norms[expert_id]) / len(expert_norms[expert_id])
+            print(f"    Expert {expert_id}: avg_norm={avg_norm:.6f} (samples={len(expert_norms[expert_id])})")
+
+    if '0' in expert_norms and '1' in expert_norms:
+        avg0 = sum(expert_norms['0']) / len(expert_norms['0'])
+        avg1 = sum(expert_norms['1']) / len(expert_norms['1'])
+        if abs(avg0 - avg1) < 1e-6:
+            print("    Warning: Expert 0 and Expert 1 weights appear identical")
+        else:
+            print(f"    Expert 0 vs 1 avg norm: {avg0:.6f} vs {avg1:.6f}")
+
+    print("\nCheckpoint load finished")
+    return model
+
+
+def _manual_load_lora(lora_target, checkpoint_path):
+    """手动加载 LoRA 权重"""
+    lora_path = os.path.join(checkpoint_path, 'adapter_model.safetensors')
+    if not os.path.exists(lora_path):
+        lora_path = os.path.join(checkpoint_path, 'adapter_model.bin')
+
+    if os.path.exists(lora_path):
+        print(f"      Manual load: {lora_path}")
+
+        if lora_path.endswith('.safetensors'):
+            from safetensors.torch import load_file
+            lora_weights = load_file(lora_path)
+        else:
+            lora_weights = torch.load(lora_path, map_location='cpu')
+
+        model_keys = set(lora_target.state_dict().keys())
+
+        # 键名映射
+        remapped_weights = {}
+        for key, value in lora_weights.items():
+            new_key = key
+            # 添加 .default
+            if '.lora_A.loraA' in key and '.default.' not in key:
+                new_key = key.replace('.lora_A.loraA', '.lora_A.default.loraA')
+            elif '.lora_B.loraB' in key and '.default.' not in key:
+                new_key = key.replace('.lora_B.loraB', '.lora_B.default.loraB')
+            remapped_weights[new_key] = value
+
+        matched = set(remapped_weights.keys()) & model_keys
+        print(f"      Keys matched after remap: {len(matched)}/{len(remapped_weights)}")
+
+        if len(matched) > 0:
+            missing, unexpected = lora_target.load_state_dict(remapped_weights, strict=False)
+            print("      Manual LoRA load finished")
+        else:
+            print("      Failed to map LoRA weights to model keys")
+    else:
+        print("      LoRA weight file not found")
+
+
 # common/load_model.py
 def load_model_for_train(model_args, data_args, training_args):
     """加载用于训练的模型"""
     merge_method_config_into(model_args)
     merge_benchmark_task_num_into(model_args)
+    # LoRA 超参以 TrainingArguments（CLI / run.py 覆盖）为准，与 model_args 对齐供 PEFT 方法侧读取
+    if getattr(training_args, "lora_enable", False):
+        model_args.lora_r = training_args.lora_r
+        model_args.lora_alpha = training_args.lora_alpha
+        model_args.lora_dropout = training_args.lora_dropout
     _m = str(getattr(model_args, "method", "") or "").lower()
     if _m not in ("", "base", "none", "zeroshot") and getattr(model_args, "task_num", None) is None:
         raise ValueError(
@@ -98,7 +241,7 @@ def load_model_for_train(model_args, data_args, training_args):
         if CLModel is None:
             raise ImportError("Failed to import CL components (CLModel / CLIntegration)")
         
-        module = __import__(f"method.{method_name}.integration", fromlist=[''])
+        module = __import__(f"method.custom.{method_name}.integration", fromlist=[''])
         IntegrationClass = getattr(module, f"{method_name.capitalize()}Integration")
         integration = IntegrationClass(model_args)
         
@@ -149,6 +292,13 @@ def _try_import_cl_components():
     
 import importlib  # ← 在文件顶部添加
 
+
+def _checkpoint_dir_has_peft_adapter(model_path: str) -> bool:
+    return bool(model_path) and os.path.isdir(model_path) and os.path.isfile(
+        os.path.join(model_path, "adapter_config.json")
+    )
+
+
 # common/load_model.py
 def load_model_for_inference(
     model_path,
@@ -173,6 +323,10 @@ def load_model_for_inference(
 
     if device != "cuda":
         kwargs['device_map'] = {"": device}
+    elif not load_8bit and not load_4bit and kwargs.get("device_map") == "auto":
+        # device_map="auto" 会在多卡上切分 LLM；随后仅对 vision/text tower 做 .to(device)
+        # 与 accelerate 分布不一致时可能触发 CUDA 端段错误。非量化推理与训练一致：整模单卡。
+        kwargs["device_map"] = None
 
     if load_8bit:
         kwargs['load_in_8bit'] = True
@@ -188,10 +342,11 @@ def load_model_for_inference(
         kwargs['torch_dtype'] = torch.float16
 
     if 'llava' in model_name.lower():
-        if 'lora' in model_name.lower() and model_base is None:
-            warnings.warn('There is `lora` in model name but no `model_base` is provided.')
-        
-        if 'lora' in model_name.lower() and model_base is not None:
+        use_peft_adapter_layout = model_base is not None and (
+            _checkpoint_dir_has_peft_adapter(model_path) or "lora" in model_name.lower()
+        )
+
+        if use_peft_adapter_layout:
             lora_cfg_pretrained = AutoConfig.from_pretrained(model_path)
             if text_tower:
                 setattr(lora_cfg_pretrained, 'mm_text_tower', text_tower)
@@ -225,7 +380,7 @@ def load_model_for_inference(
                 print(f"Inference: applying continual learning method {method}...")
                 CLModel, CLIntegration = _try_import_cl_components()
                 if CLModel is not None:
-                    module = __import__(f"method.{method}.integration", fromlist=[''])
+                    module = __import__(f"method.custom.{method}.integration", fromlist=[''])
                     # 若方法提供 PEFT 扩展注册，按需触发（避免 import-time 副作用）
                     if hasattr(module, "ensure_peft_extension_registered"):
                         try:
@@ -244,7 +399,7 @@ def load_model_for_inference(
                         cur_task=kwargs.get("cur_task", 0),
                         task_num=task_num,
                         benchmark=benchmark,
-                        clip_feature_dim=kwargs.get("clip_feature_dim", 768),
+                        clip_feature_dim=kwargs.get("clip_feature_dim", CLIP_FEATURE_DIM),
                     )
                     merge_method_config_into(pseudo_args, method=method)
                     merge_benchmark_task_num_into(pseudo_args, benchmark=benchmark)
@@ -287,7 +442,7 @@ def load_model_for_inference(
                         non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
                     model.load_state_dict(non_lora_trainables, strict=False)
 
-                from PEFT.peft import PeftModel
+                from PEFT import PeftModel
                 print('Loading LoRA weights...')
                 model = PeftModel.from_pretrained(model, model_path)
                 print('Merging LoRA weights...')
@@ -320,6 +475,9 @@ def load_model_for_inference(
             if not getattr(text_tower_model, 'is_loaded', True):
                 text_tower_model.load_model()
             text_tower_model.to(device=device, dtype=torch.float16)
+
+        if device == "cuda" and not load_8bit and not load_4bit and kwargs.get("device_map") is None:
+            model.to(device)
     else:
         warnings.warn('The model is not llava')
         assert(0)

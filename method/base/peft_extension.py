@@ -24,8 +24,8 @@ def register_peft_extension(
         task_type: 可选，任务类型键，例如 "CAUSAL_LM_HiDe"
         task_peft_model_cls: 可选，task_type 对应的 PeftModel 包装类
     """
-    from PEFT.peft import mapping as peft_mapping
-    from PEFT.peft import peft_model as peft_model_module
+    from PEFT import mapping as peft_mapping
+    from PEFT import peft_model as peft_model_module
 
     peft_mapping.PEFT_TYPE_TO_CONFIG_MAPPING[peft_type] = config_cls
 

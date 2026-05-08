@@ -2,7 +2,7 @@
 Defaults for method: simple_prompt
 """
 
-from config.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
+from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "simple_prompt",
@@ -19,7 +19,6 @@ TRAIN_FLAG_OVERRIDES = {
 TRAIN_EXTRA_ARGS: list[str] = []
 
 INFER_DEFAULTS = {
-    "clmethod": "simple_prompt",
     "batch_size": 12,
 }
 
@@ -47,7 +46,6 @@ TRAIN_BATCH_SIZES = {
 }
 
 METHOD_CONFIG = {
-    "clip_feature_dim": 768,
     "num_prompt_tokens": 256,
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
 }

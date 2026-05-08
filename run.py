@@ -14,6 +14,8 @@ from typing import Iterable
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
+from config.backbones.llava import BACKBONE_ID, DEFAULT_CONV_MODE
+
 
 def _run_stamp() -> str:
     # month/day/hour/min to distinguish runs
@@ -44,6 +46,10 @@ def _load_method_config(method: str) -> dict:
         mod = __import__(f"config.methods.{method}", fromlist=["*"])
         return {
             "TRAIN_FLAG_OVERRIDES": getattr(mod, "TRAIN_FLAG_OVERRIDES", {}) or {},
+            "TRAIN_FLAG_OVERRIDES_BY_BENCHMARK": getattr(
+                mod, "TRAIN_FLAG_OVERRIDES_BY_BENCHMARK", {}
+            )
+            or {},
             "TRAIN_EXTRA_ARGS": getattr(mod, "TRAIN_EXTRA_ARGS", []) or [],
             "INFER_DEFAULTS": getattr(mod, "INFER_DEFAULTS", {}) or {},
             "TRAIN_BATCH_SIZES": getattr(mod, "TRAIN_BATCH_SIZES", {}) or {},
@@ -51,6 +57,7 @@ def _load_method_config(method: str) -> dict:
     except Exception:
         return {
             "TRAIN_FLAG_OVERRIDES": {},
+            "TRAIN_FLAG_OVERRIDES_BY_BENCHMARK": {},
             "TRAIN_EXTRA_ARGS": [],
             "INFER_DEFAULTS": {},
             "TRAIN_BATCH_SIZES": {},
@@ -101,27 +108,15 @@ def _legacy_checkpoint_path(checkpoint_dir: str, benchmark: str, ckpt_name: str)
     return Path(checkpoint_dir) / benchmark_dir / ckpt_name
 
 
-def _resolve_paths(app_config: str):
-    if app_config == "base":
-        from config.paths.paths_config_base import (  # type: ignore
-            BASE_MODEL_PATH,
-            CLIP_PATH,
-            IMAGE_FOLDER,
-            DEEPSPEED_CONFIG,
-            CHECKPOINT_DIR,
-            RESULT_DIR,
-        )
-    elif app_config == "instruct":
-        from config.paths.paths_config_instruct import (  # type: ignore
-            BASE_MODEL_PATH,
-            CLIP_PATH,
-            IMAGE_FOLDER,
-            DEEPSPEED_CONFIG,
-            CHECKPOINT_DIR,
-            RESULT_DIR,
-        )
-    else:
-        raise SystemExit(f"Unknown --app-config: {app_config}")
+def _resolve_paths() -> dict[str, str]:
+    from config.paths.paths import (  # type: ignore
+        BASE_MODEL_PATH,
+        CLIP_PATH,
+        IMAGE_FOLDER,
+        DEEPSPEED_CONFIG,
+        CHECKPOINT_DIR,
+        RESULT_DIR,
+    )
 
     return {
         "BASE_MODEL_PATH": str(BASE_MODEL_PATH),
@@ -131,6 +126,26 @@ def _resolve_paths(app_config: str):
         "CHECKPOINT_DIR": str(CHECKPOINT_DIR),
         "RESULT_DIR": str(RESULT_DIR),
     }
+
+
+def _resolve_method_checkpoint(
+    checkpoint_dir: str, benchmark: str, method: str, ckpt_basename: str
+) -> Path:
+    """优先新目录名 Task{n}_llava，其次同路径下旧名 Task{n}_llava_lora，再尝试无 method 子目录的旧布局。"""
+    candidates: list[Path] = []
+    primary = _method_checkpoint_path(checkpoint_dir, benchmark, method, ckpt_basename)
+    candidates.append(primary)
+    if ckpt_basename.endswith("_llava") and "_lora" not in ckpt_basename:
+        legacy_name = ckpt_basename.replace("_llava", "_llava_lora")
+        candidates.append(_method_checkpoint_path(checkpoint_dir, benchmark, method, legacy_name))
+    candidates.append(_legacy_checkpoint_path(checkpoint_dir, benchmark, ckpt_basename))
+    if ckpt_basename.endswith("_llava") and "_lora" not in ckpt_basename:
+        legacy_name = ckpt_basename.replace("_llava", "_llava_lora")
+        candidates.append(_legacy_checkpoint_path(checkpoint_dir, benchmark, legacy_name))
+    for p in candidates:
+        if p.exists():
+            return p
+    return primary
 
 
 def _ensure_parent(p: Path) -> None:
@@ -265,9 +280,8 @@ def _stream_run(
         return int(proc.wait())
 
 
-def _build_env(app_config: str) -> dict[str, str]:
+def _build_env() -> dict[str, str]:
     env = os.environ.copy()
-    env["APP_CONFIG"] = app_config
     env["PYTHONPATH"] = f"{PROJECT_ROOT}:{env.get('PYTHONPATH', '')}"
 
     # Sanitize thread env vars to avoid libgomp warnings.
@@ -284,15 +298,17 @@ def _build_env(app_config: str) -> dict[str, str]:
     return env
 
 
-def _get_task_config(benchmark: str, task_id: int) -> dict:
+def _get_task_config(benchmark: str, task_id: int, *, use_sub_dataset: bool) -> dict:
     from config.benchmarks import BENCHMARKS  # type: ignore
+    from config.benchmarks.sub_dataset import apply_use_sub_dataset_to_task  # type: ignore
 
     if benchmark not in BENCHMARKS:
         raise SystemExit(f"Benchmark '{benchmark}' not found. Available: {list(BENCHMARKS.keys())}")
     tasks = BENCHMARKS[benchmark]
     if task_id < 0 or task_id >= len(tasks):
         raise SystemExit(f"Task {task_id} not in benchmark '{benchmark}' (0-{len(tasks)-1})")
-    return tasks[task_id]
+    raw = tasks[task_id]
+    return apply_use_sub_dataset_to_task(raw, use_sub_dataset=use_sub_dataset, benchmark=benchmark)
 
 
 def _build_train_command(
@@ -316,7 +332,7 @@ def _build_train_command(
         "deepspeed",
         f"--include=localhost:{gpus}",
         f"--master_port={port}",
-        "backbone/llava/train/train_mem.py",
+        "backbone/shared/train/train_mem.py",
         "--deepspeed",
         paths["DEEPSPEED_CONFIG"],
         "--lora_enable",
@@ -455,22 +471,22 @@ def _run_inference_one_chunk(
     chunks: int,
     chunk_idx: int,
     output_file: Path,
-    clmethod: str,
+    train_method: str,
     temperature: str,
     conv_mode: str,
     batch_size: int,
     benchmark: str,
 ):
     eval_config = task["eval"]
-    method = INFERENCE_METHOD_MAP.get(task["name"], "default")
+    ui_method = INFERENCE_METHOD_MAP.get(task["name"], "default")
 
     cmd = [
         sys.executable,
         "-m",
-        "backbone.llava.eval.model_unified",
-        method,
-        "--clmethod",
-        str(clmethod),
+        "backbone.shared.eval.model_unified",
+        ui_method,
+        "--method",
+        str(train_method),
         "--model-path",
         str(model_path),
         "--model-base",
@@ -513,7 +529,7 @@ def _run_inference_parallel(
     paths: dict,
     gpus: list[int],
     result_dir: Path,
-    clmethod: str,
+    train_method: str,
     temperature: str,
     conv_mode: str,
     batch_size: int,
@@ -528,14 +544,14 @@ def _run_inference_parallel(
         try:
             # Build the same command as _run_inference_one_chunk but stream its output.
             eval_config = task["eval"]
-            method = INFERENCE_METHOD_MAP.get(task["name"], "default")
+            ui_method = INFERENCE_METHOD_MAP.get(task["name"], "default")
             cmd = [
                 sys.executable,
                 "-m",
-                "backbone.llava.eval.model_unified",
-                method,
-                "--clmethod",
-                str(clmethod),
+                "backbone.shared.eval.model_unified",
+                ui_method,
+                "--method",
+                str(train_method),
                 "--model-path",
                 str(model_path),
                 "--model-base",
@@ -607,7 +623,7 @@ def _run_evaluation(task: dict, *, result_file: Path, output_dir: Path):
     if eval_task is None:
         raise SystemExit(f"No evaluation task mapping for {task['name']}")
 
-    cmd = [sys.executable, "-m", "backbone.llava.eval.eval_unified", eval_task]
+    cmd = [sys.executable, "-m", "backbone.shared.eval.eval_unified", eval_task]
     if eval_task != "gqa":
         cmd.extend(["--result-file", str(result_file), "--output-dir", str(output_dir)])
 
@@ -634,24 +650,29 @@ def _infer_y_label(model_path: str, checkpoint_task: str) -> str:
 
 def cmd_train(args: argparse.Namespace) -> int:
     # benchmark configs are imported in *this* process
-    os.environ["APP_CONFIG"] = str(args.app_config)
-    env = _build_env(args.app_config)
+    env = _build_env()
     # Default logging level for subprocesses
     env["PYMCIT_LOG_LEVEL"] = "DEBUG" if bool(args.debug) else "TRAIN"
-    paths = _resolve_paths(args.app_config)
+    paths = _resolve_paths()
     task_ids = _parse_task_ids(args.tasks)
     stamp = _run_stamp()
     cfg = _load_run_config()
     method_cfg = _load_method_config(args.method)
-    mirror = bool(getattr(args, "console", False))
+    mirror = False
 
     flag_overrides = dict(cfg.get("TRAIN_FLAG_OVERRIDES", {}))
     flag_overrides.update(method_cfg.get("TRAIN_FLAG_OVERRIDES", {}))
+    bm_flags = method_cfg.get("TRAIN_FLAG_OVERRIDES_BY_BENCHMARK") or {}
+    if isinstance(bm_flags, dict):
+        bm_key = str(args.benchmark).strip().lower()
+        patch = bm_flags.get(bm_key)
+        if isinstance(patch, dict):
+            flag_overrides.update(patch)
     extra_args = list(cfg.get("TRAIN_EXTRA_ARGS", [])) + list(method_cfg.get("TRAIN_EXTRA_ARGS", []))
     batch_sizes = method_cfg.get("TRAIN_BATCH_SIZES", {})
 
     for task_id in task_ids:
-        task = _get_task_config(args.benchmark, task_id)
+        task = _get_task_config(args.benchmark, task_id, use_sub_dataset=bool(args.use_sub_dataset))
         bs = None
         bench_bs: dict = {}
         if isinstance(batch_sizes, dict):
@@ -682,22 +703,23 @@ def cmd_train(args: argparse.Namespace) -> int:
         # ==== Method-aware checkpoint layout ====
         # Override task output_dir / previous_task to include method subdir.
         ckpt_root = paths["CHECKPOINT_DIR"]
-        ckpt_name = f"Task{task['cur_task']}_llava_lora"
+        ckpt_name = f"Task{task['cur_task']}_llava"
         new_out = _method_checkpoint_path(ckpt_root, args.benchmark, args.method, ckpt_name)
         task = dict(task)
         task["output_dir"] = str(new_out)
 
         if task.get("previous_task"):
             prev_name = Path(str(task["previous_task"])).name
-            new_prev = _method_checkpoint_path(ckpt_root, args.benchmark, args.method, prev_name)
-            legacy_prev = _legacy_checkpoint_path(ckpt_root, args.benchmark, prev_name)
-            task["previous_task"] = str(new_prev if new_prev.exists() else legacy_prev)
+            task["previous_task"] = str(
+                _resolve_method_checkpoint(ckpt_root, args.benchmark, args.method, prev_name)
+            )
         # ==============================
 
-        # log path layout: output/train/<benchmark>/<method>/taskXX/run_*.txt
+        # output/<backbone>/train/<benchmark>/<method>/taskXX/run_*.txt
         log_path = (
             PROJECT_ROOT
             / "output"
+            / BACKBONE_ID
             / "train"
             / args.benchmark
             / args.method
@@ -740,21 +762,16 @@ def cmd_train(args: argparse.Namespace) -> int:
 
 def cmd_infer(args: argparse.Namespace) -> int:
     # benchmark configs are imported in *this* process
-    os.environ["APP_CONFIG"] = str(args.app_config)
-    env = _build_env(args.app_config)
+    env = _build_env()
     env["PYMCIT_LOG_LEVEL"] = "DEBUG" if bool(getattr(args, "debug", False)) else "INFER"
-    paths = _resolve_paths(args.app_config)
+    paths = _resolve_paths()
     task_ids = _parse_task_ids(args.tasks)
     stamp = _run_stamp()
-    mirror = bool(getattr(args, "console", True))
+    mirror = False
 
     method_cfg = _load_method_config(args.method)
-    if "--clmethod" not in sys.argv:
-        m_cl = method_cfg.get("INFER_DEFAULTS", {}).get("clmethod")
-        if m_cl:
-            args.clmethod = m_cl
 
-    # Inference batch size (for backbone.llava.eval.model_unified -> InferenceEngine)
+    # Inference batch size (for backbone.shared.eval.model_unified -> InferenceEngine)
     infer_bs = getattr(args, "batch_size", None)
     if infer_bs is None:
         infer_bs = method_cfg.get("INFER_DEFAULTS", {}).get("batch_size", 1)
@@ -766,9 +783,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
     else:
         checkpoint_dir = paths["CHECKPOINT_DIR"]
         ckpt_name = f"Task{args.checkpoint_task}{args.checkpoint_suffix}"
-        new_path = _method_checkpoint_path(checkpoint_dir, args.benchmark, args.method, ckpt_name)
-        legacy_path = _legacy_checkpoint_path(checkpoint_dir, args.benchmark, ckpt_name)
-        model_path = str(new_path if new_path.exists() else legacy_path)
+        model_path = str(_resolve_method_checkpoint(checkpoint_dir, args.benchmark, args.method, ckpt_name))
         checkpoint_task = args.checkpoint_task
 
     y = _infer_y_label(args.model_path, checkpoint_task)
@@ -779,21 +794,28 @@ def cmd_infer(args: argparse.Namespace) -> int:
         raise SystemExit("Invalid --gpus. Example: --gpus 0,1")
 
     for task_id in task_ids:
-        task = _get_task_config(args.benchmark, task_id)
+        task = _get_task_config(args.benchmark, task_id, use_sub_dataset=bool(args.use_sub_dataset))
 
-        # output/infer/<benchmark>/<clmethod>/ — 与 checkpoint 的 --method 解耦，按实际推理方法分目录
+        # output/<backbone>/infer/<benchmark>/<method>/
         log_path = (
             PROJECT_ROOT
             / "output"
+            / BACKBONE_ID
             / "infer"
             / args.benchmark
-            / args.clmethod
+            / args.method
             / f"{y}_to_{task_id}_{stamp}.txt"
         )
 
         def _do_infer_eval() -> int:
-            # mirror original behavior: results go to RESULT_DIR/<task_name>/<stage>
-            result_dir = Path(paths["RESULT_DIR"]) / task["name"] / args.stage
+            result_dir = (
+                Path(paths["RESULT_DIR"])
+                / BACKBONE_ID
+                / _benchmark_dir_name(args.benchmark)
+                / _method_dir_name(args.method)
+                / task["name"]
+                / args.stage
+            )
             result_dir.mkdir(parents=True, exist_ok=True)
 
             print("Running inference in parallel...")
@@ -803,7 +825,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
                 paths=paths,
                 gpus=gpus,
                 result_dir=result_dir,
-                clmethod=args.clmethod,
+                train_method=args.method,
                 temperature=args.temperature,
                 conv_mode=args.conv_mode,
                 batch_size=infer_bs,
@@ -840,8 +862,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
         try:
             _log_line("=" * 60, log_file=log_path, mirror=mirror, lock=log_lock)
             _log_line(
-                f"INFER benchmark={args.benchmark} clmethod={args.clmethod} "
-                f"(checkpoint group method={args.method}) y={y} -> x={task_id}",
+                f"INFER benchmark={args.benchmark} method={args.method} y={y} -> x={task_id}",
                 log_file=log_path,
                 mirror=mirror,
                 lock=log_lock,
@@ -850,8 +871,14 @@ def cmd_infer(args: argparse.Namespace) -> int:
             _log_line(f"log: {log_path}", log_file=log_path, mirror=mirror, lock=log_lock)
             _log_line("=" * 60, log_file=log_path, mirror=mirror, lock=log_lock)
 
-            # mirror original behavior: results go to RESULT_DIR/<task_name>/<stage>
-            result_dir = Path(paths["RESULT_DIR"]) / task["name"] / args.stage
+            result_dir = (
+                Path(paths["RESULT_DIR"])
+                / BACKBONE_ID
+                / _benchmark_dir_name(args.benchmark)
+                / _method_dir_name(args.method)
+                / task["name"]
+                / args.stage
+            )
             result_dir.mkdir(parents=True, exist_ok=True)
 
             print("Running inference in parallel...")
@@ -865,7 +892,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
                     output_file = result_dir / f"{chunks}_{idx}.jsonl"
                     try:
                         eval_config = task["eval"]
-                        method = INFERENCE_METHOD_MAP.get(task["name"], "default")
+                        ui_method = INFERENCE_METHOD_MAP.get(task["name"], "default")
                         image_folder = task.get("image_folder")
                         if image_folder is None:
                             image_folder = paths["IMAGE_FOLDER"]
@@ -873,10 +900,10 @@ def cmd_infer(args: argparse.Namespace) -> int:
                         cmd = [
                             sys.executable,
                             "-m",
-                            "backbone.llava.eval.model_unified",
-                            method,
-                            "--clmethod",
-                            str(args.clmethod),
+                            "backbone.shared.eval.model_unified",
+                            ui_method,
+                            "--method",
+                            str(args.method),
                             "--model-path",
                             str(model_path),
                             "--model-base",
@@ -968,7 +995,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
             eval_task = EVAL_TASK_MAP.get(task["name"])
             if eval_task is None:
                 raise RuntimeError(f"No evaluation task mapping for {task['name']}")
-            eval_cmd = [sys.executable, "-m", "backbone.llava.eval.eval_unified", eval_task]
+            eval_cmd = [sys.executable, "-m", "backbone.shared.eval.eval_unified", eval_task]
             if eval_task != "gqa":
                 eval_cmd.extend(["--result-file", str(merged_file), "--output-dir", str(result_dir)])
             if task["eval"].get("eval_args"):
@@ -1018,11 +1045,10 @@ def main() -> None:
     p_train.add_argument("--port", type=int, default=29601)
     p_train.add_argument("--debug", action="store_true")
     p_train.add_argument("--method", default="hide_llava")
-    p_train.add_argument("--console", action="store_true", help="Mirror output to console (default: write only to output/ logs)")
     p_train.add_argument(
-        "--app-config",
-        default=os.environ.get("APP_CONFIG", "instruct"),
-        choices=["base", "instruct"],
+        "--use-sub-dataset",
+        action=argparse.BooleanOptionalAction,
+        help="UCIT：为 *.json 数据路径自动加 _sub（默认见 config/run_config.py TRAIN_DEFAULTS）",
     )
     p_train.set_defaults(**{k: v for k, v in cfg["TRAIN_DEFAULTS"].items() if k != "handler"})
     p_train.set_defaults(train_flag_overrides=cfg["TRAIN_FLAG_OVERRIDES"])
@@ -1034,24 +1060,22 @@ def main() -> None:
     p_infer.add_argument("--benchmark", default="coin")
     p_infer.add_argument("--gpus", default="0,1")
     p_infer.add_argument("--checkpoint-task", default="7")
-    p_infer.add_argument("--checkpoint-suffix", default="_llava_lora")
+    p_infer.add_argument("--checkpoint-suffix", default="_llava")
     p_infer.add_argument("--model-path", default="")
     p_infer.add_argument("--stage", default="MoELoRA")
-    p_infer.add_argument("--clmethod", default="hide_llava")
     p_infer.add_argument("--temperature", default="0")
-    p_infer.add_argument("--conv-mode", default="vicuna_v1")
+    p_infer.add_argument("--conv-mode", default=DEFAULT_CONV_MODE)
     p_infer.add_argument("--method", default="hide_llava")
     p_infer.add_argument(
         "--batch-size",
         type=int,
         default=None,
-        help="Inference batch size for backbone.llava.eval.model_unified (overrides config/methods/<method>.py INFER_DEFAULTS.batch_size)",
+        help="Inference batch size for backbone.shared.eval.model_unified (overrides config/methods/<method>.py INFER_DEFAULTS.batch_size)",
     )
-    p_infer.add_argument("--console", action="store_true", help="Mirror output to console (default: write only to output/ logs)")
     p_infer.add_argument(
-        "--app-config",
-        default=os.environ.get("APP_CONFIG", "instruct"),
-        choices=["base", "instruct"],
+        "--use-sub-dataset",
+        action=argparse.BooleanOptionalAction,
+        help="UCIT：为 *.json 数据路径自动加 _sub（默认见 config/run_config.py INFER_DEFAULTS）",
     )
     p_infer.set_defaults(**{k: v for k, v in cfg["INFER_DEFAULTS"].items() if k != "handler"})
     p_infer.set_defaults(handler=cmd_infer)

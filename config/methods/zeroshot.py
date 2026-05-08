@@ -17,7 +17,6 @@ TRAIN_FLAG_OVERRIDES = {
 TRAIN_EXTRA_ARGS: list[str] = []
 
 INFER_DEFAULTS = {
-    "clmethod": "zeroshot",
     "batch_size": 12,
 }
 

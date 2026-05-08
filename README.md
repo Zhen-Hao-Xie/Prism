@@ -5,10 +5,7 @@ Updated by tjt
 
 ### 1) 配路径
 
-训练/推理会通过 `--app-config {base|instruct}` 选择不同的路径配置：
-
-- `config/paths/paths_config_instruct.py`
-- `config/paths/paths_config_base.py`
+路径统一在 **`config/paths/paths.py`** 中修改（不再区分 base / instruct）。
 
 你需要把下面这些路径改成你机器上的真实位置：
 
@@ -28,13 +25,13 @@ Updated by tjt
 
 注意，其实你可以直接 python run.py train 0，其他参数都可以在config/run_config里面改
 # 训练 CoIN 的 task 0
-python run.py train 0 --benchmark coin --method same --app-config instruct --gpus 0,1 --port 29601 --console
+python run.py train 0 --benchmark coin --method same --gpus 0,1 --port 29601
 
 # 连续训练 task 0 和 task 1（task1 会自动带上 previous_task_model_path）
-python run.py train 0 1 --benchmark coin --method same --app-config instruct --gpus 0,1 --port 29601 --console
+python run.py train 0 1 --benchmark coin --method same --gpus 0,1 --port 29601
 ```
 
-日志默认写到 `output/train/<benchmark>/<method>/taskXX/run_*.txt`（加 `--console` 会同时输出到终端）。
+日志默认写到 `output/<backbone>/train/<benchmark>/<method>/taskXX/run_*.txt`（`backbone` 见 `config/backbones/llava.py` 的 `BACKBONE_ID`）。
 
 ### 3) 如何改“训练参数/方法参数”
 
@@ -53,7 +50,7 @@ python run.py train 0 1 --benchmark coin --method same --app-config instruct --g
 示例（命令行覆盖）：
 
 ```bash
-python run.py train 1 --benchmark coin --method same --app-config instruct --gpus 0,1 --console \
+python run.py train 1 --benchmark coin --method same --gpus 0,1 \
   --debug \
   --port 29601
 ```
@@ -65,10 +62,10 @@ python run.py train 1 --benchmark coin --method same --app-config instruct --gpu
 推理/评测同样通过：
 
 ```bash
-python run.py infer 0 1 --benchmark coin --method same --app-config instruct --gpus 0,1 --console
+python run.py infer 0 1 --benchmark coin --method same --gpus 0,1
 ```
 
-> 说明：推理子命令还包含 `--model-path/--checkpoint-task/--checkpoint-suffix/--clmethod` 等参数，具体以 `run.py infer -h` 的输出为准。
+> 说明：推理子命令还包含 `--model-path/--checkpoint-task/--checkpoint-suffix/--method`（传给评测子进程）等参数，具体以 `run.py infer -h` 的输出为准。评测结果目录为 `results/<backbone>/<Benchmark>/<method>/<任务名>/<stage>/`。
 
 ---
 
@@ -128,7 +125,7 @@ class My_methodIntegration(CLIntegration):
 这样你就可以直接：
 
 ```bash
-python run.py train 0 1 --benchmark coin --method my_method --app-config instruct --gpus 0,1 --console
+python run.py train 0 1 --benchmark coin --method my_method --gpus 0,1
 ```
 
 ### C. （可选）增加新的 PEFT 方法 / tuner

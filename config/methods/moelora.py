@@ -2,7 +2,7 @@
 Defaults for method: moelora
 """
 
-from config.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
+from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "moelora",
@@ -21,7 +21,6 @@ TRAIN_FLAG_OVERRIDES = {
 TRAIN_EXTRA_ARGS: list[str] = []
 
 INFER_DEFAULTS = {
-    "clmethod": "moelora",
     "batch_size": 12,
 }
 

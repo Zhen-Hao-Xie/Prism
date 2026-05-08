@@ -3,10 +3,12 @@
 
 指令侧优先级：``ins_emb_path``（自定义 .pkl）>
 ``smolora_builtin_sentence_ins_emb``（框架内建 MiniLM，等价 ``ins_gen.py`` single）>
-否则 CLIP ``text_tower``（需 ``clip_feature_dim``，通常 768）。
+否则 CLIP ``text_tower``（特征维见 ``config.backbone.llava.CLIP_FEATURE_DIM``，通常 768）。
+
+PEFT 注入位置：``METHOD_CONFIG["peft_target_modules"]`` 或 ``--peft_target_modules``（``attn`` / ``ffn`` / ``linear`` 等），默认 ``attention``；见 ``PEFT/utils/peft_target_modules.py``。
 """
 
-from config.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
+from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "smolora",
@@ -22,7 +24,6 @@ TRAIN_FLAG_OVERRIDES = {
 TRAIN_EXTRA_ARGS: list[str] = []
 
 INFER_DEFAULTS = {
-    "clmethod": "smolora",
     "batch_size": 8,
 }
 
@@ -41,7 +42,6 @@ METHOD_CONFIG = {
     "smolora_builtin_sentence_ins_emb": True,
     # 本机目录（须含 config.json）；框架会 local_files_only=True，不向 huggingface.co 发请求。换机器请改为你的缓存路径。
     "smolora_sentence_transformer_model": "/root/.cache/modelscope/hub/models/sentence-transformers/all-MiniLM-L6-v2",
-    "clip_feature_dim": 768,
     "smolora_clip_no_grad": True,
     "ins_type": 0,
     "lora_r": 64,
