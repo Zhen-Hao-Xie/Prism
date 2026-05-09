@@ -152,7 +152,7 @@ class AdaLoraModel(LoraModel):
             if target_module_found:
                 if not is_target_modules_in_base_model:
                     is_target_modules_in_base_model = True
-                parent, target, target_name = _get_submodules(self.model, key)
+                parent, target, target_name, _ = _get_submodules(self.model, key)
                 bias = target.bias is not None
                 if isinstance(target, LoraLayer):
                     target.update_layer(
@@ -262,7 +262,7 @@ class AdaLoraModel(LoraModel):
             else:
                 raise ValueError("Unexcepted type of rank_idx")
             key = ".".join(name.split(".")[0:-2]) if adapter_name in name else ".".join(name.split(".")[0:-1])
-            _, target, _ = _get_submodules(self.model, key)
+            _, target, _, _ = _get_submodules(self.model, key)
             lora_E_weights = target.lora_E[adapter_name][rank_idx]
             lora_A_weights = target.lora_A[adapter_name][rank_idx]
             lora_B_weights = target.lora_B[adapter_name][:, rank_idx]

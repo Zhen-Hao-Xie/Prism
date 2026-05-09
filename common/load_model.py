@@ -1,7 +1,8 @@
 import torch
 import transformers
-from typing import Tuple, Optional
+from typing import Any, Tuple, Optional
 import os
+import sys
 import importlib  # ← 在文件顶部添加
 from backbone.shared.model_loading import (
     setup_quantization,
@@ -28,6 +29,15 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAn
 import torch
 from backbone.llava.model import *
 import warnings
+
+
+def _cli_sets_training_flag(flag: str) -> bool:
+    """子进程 ``sys.argv`` 是否显式包含 ``--foo`` 或 ``--foo=...``（用于保留用户 CLI 覆盖）。"""
+    prefix = f"{flag}="
+    for a in sys.argv:
+        if a == flag or a.startswith(prefix):
+            return True
+    return False
 
 
 # [新增] 延迟导入函数：避免循环依赖，仅在需要时加载 CL 组件
@@ -182,8 +192,21 @@ def load_model_for_train(model_args, data_args, training_args):
     """加载用于训练的模型"""
     merge_method_config_into(model_args)
     merge_benchmark_task_num_into(model_args)
-    # LoRA 超参以 TrainingArguments（CLI / run.py 覆盖）为准，与 model_args 对齐供 PEFT 方法侧读取
+    # LoRA 数值：METHOD_CONFIG / METHOD_CONFIG_BY_BENCHMARK 合入 model_args 后写回 training_args（单一数据源）；
+    # 显式 --lora_* CLI 仍优先。
     if getattr(training_args, "lora_enable", False):
+        _lora_flag = {
+            "lora_r": "--lora_r",
+            "lora_alpha": "--lora_alpha",
+            "lora_dropout": "--lora_dropout",
+        }
+        for name, flag in _lora_flag.items():
+            if _cli_sets_training_flag(flag):
+                continue
+            if hasattr(model_args, name):
+                v = getattr(model_args, name)
+                if v is not None:
+                    setattr(training_args, name, v)
         model_args.lora_r = training_args.lora_r
         model_args.lora_alpha = training_args.lora_alpha
         model_args.lora_dropout = training_args.lora_dropout
@@ -261,7 +284,7 @@ def load_model_for_train(model_args, data_args, training_args):
             )
             print("Checkpoint load finished.\n")
             
-            # 加载方法额外状态（如 SAME 的 same_state.bin / HiDe 的 anchors 等）
+            # 加载方法额外状态（SAME：自 adapter_model.safetensors 内嵌键解析；HiDe 等见各 integration）
             if hasattr(model, '_integration'):
                 integration = model._integration
                 if hasattr(integration, 'load_extra_state'):
@@ -297,6 +320,41 @@ def _checkpoint_dir_has_peft_adapter(model_path: str) -> bool:
     return bool(model_path) and os.path.isdir(model_path) and os.path.isfile(
         os.path.join(model_path, "adapter_config.json")
     )
+
+
+def _checkpoint_has_merged_llava_weights(model_path: str) -> bool:
+    """训练保存为整模（含 mm_projector 等），无 ``adapter_config.json`` 时存在。"""
+    if not model_path or not os.path.isdir(model_path):
+        return False
+    return os.path.isfile(os.path.join(model_path, "model.safetensors")) or os.path.isfile(
+        os.path.join(model_path, "pytorch_model.bin")
+    )
+
+
+def _load_merged_llava_weights_into_model(model: Any, checkpoint_path: str) -> None:
+    """将 ``model.safetensors`` / ``pytorch_model.bin`` 载入 ``CLModel`` 内层 LLaVA（``_base_model``）。"""
+    inner = model._base_model if hasattr(model, "_base_model") else model
+    st_path = os.path.join(checkpoint_path, "model.safetensors")
+    pt_path = os.path.join(checkpoint_path, "pytorch_model.bin")
+    if os.path.isfile(st_path):
+        from safetensors.torch import load_file
+
+        weights: dict = dict(load_file(st_path))
+        src = st_path
+    elif os.path.isfile(pt_path):
+        weights = torch.load(pt_path, map_location="cpu")
+        src = pt_path
+    else:
+        raise FileNotFoundError(
+            f"Merged LLaVA checkpoint not found under {checkpoint_path} "
+            "(expected model.safetensors or pytorch_model.bin)"
+        )
+    dtype = next(inner.parameters()).dtype
+    weights = {k: v.to(dtype) if torch.is_tensor(v) else v for k, v in weights.items()}
+    bad = inner.load_state_dict(weights, strict=False)
+    miss = getattr(bad, "missing_keys", None) or []
+    unexp = getattr(bad, "unexpected_keys", None) or []
+    print(f"  Merged LLaVA weights from {src} | missing_keys={len(miss)} unexpected_keys={len(unexp)}")
 
 
 # common/load_model.py
@@ -343,7 +401,14 @@ def load_model_for_inference(
 
     if 'llava' in model_name.lower():
         use_peft_adapter_layout = model_base is not None and (
-            _checkpoint_dir_has_peft_adapter(model_path) or "lora" in model_name.lower()
+            _checkpoint_dir_has_peft_adapter(model_path)
+            or "lora" in model_name.lower()
+            or (
+                str(method).lower() == "hide_llava"
+                and os.path.isdir(model_path or "")
+                and os.path.isfile(os.path.join(model_path, "hide_state.pt"))
+                and _checkpoint_has_merged_llava_weights(model_path)
+            )
         )
 
         if use_peft_adapter_layout:
@@ -417,12 +482,22 @@ def load_model_for_inference(
                     
                     if os.path.exists(model_path):
                         print("Loading weights from checkpoint...")
-                        model = load_from_checkpoint(
-                            model,
-                            model_path,
-                            merge_lora=False,  # ← 不要 merge，保持 PEFT 结构
-                            for_incremental_training=False  # ← 推理时不需要增量训练
-                        )
+                        if _checkpoint_dir_has_peft_adapter(model_path):
+                            model = load_from_checkpoint(
+                                model,
+                                model_path,
+                                merge_lora=False,
+                                for_incremental_training=False,
+                            )
+                        elif _checkpoint_has_merged_llava_weights(model_path):
+                            _load_merged_llava_weights_into_model(model, model_path)
+                        else:
+                            model = load_from_checkpoint(
+                                model,
+                                model_path,
+                                merge_lora=False,
+                                for_incremental_training=False,
+                            )
                         print("Checkpoint load finished")
                     
                     # 加载 HiDe 状态（anchors 等）
@@ -456,9 +531,18 @@ def load_model_for_inference(
             cfg_pretrained = AutoConfig.from_pretrained(model_path)
             model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
 
-            mm_projector_weights = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
-            mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
-            model.load_state_dict(mm_projector_weights, strict=False)
+            mm_path = os.path.join(model_path, "mm_projector.bin")
+            if os.path.isfile(mm_path):
+                mm_projector_weights = torch.load(mm_path, map_location="cpu")
+                mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
+                model.load_state_dict(mm_projector_weights, strict=False)
+            elif _checkpoint_has_merged_llava_weights(model_path):
+                _load_merged_llava_weights_into_model(model, model_path)
+            else:
+                print(
+                    f"Warning: no mm_projector.bin under {model_path}; "
+                    "multimodal projector may match base only."
+                )
         else:
             tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
             model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)

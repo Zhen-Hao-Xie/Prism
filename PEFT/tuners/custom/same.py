@@ -352,7 +352,7 @@ class SAMELinear(nn.Linear, SAMELayer):
                 weight = experts[expert_id].mlp.weight
                 if not weight.requires_grad:
                     print(f"[WARN] Layer{self.layer_id} Expert{expert_id} {name}.weight requires_grad=False, hook skipped")
-                    assert(0)
+                    assert 0
                     continue
                 hook_fn = self._make_curvature_hook(name, expert_id, adapter_name)
                 weight.register_hook(hook_fn)
@@ -518,7 +518,7 @@ class SAMELinear(nn.Linear, SAMELayer):
                 return grad
             cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}", False)
             if not cov_prev_valid:
-                assert(0)
+                assert 0
                 return grad
 
             device = grad.device
@@ -529,7 +529,7 @@ class SAMELinear(nn.Linear, SAMELayer):
             energy = S_prev ** 2
             total_energy = energy.sum()
             if total_energy < 1e-10:
-                assert(0)
+                assert 0
                 return grad
                 
             cumsum = torch.cumsum(energy, dim=0)

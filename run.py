@@ -46,10 +46,6 @@ def _load_method_config(method: str) -> dict:
         mod = __import__(f"config.methods.{method}", fromlist=["*"])
         return {
             "TRAIN_FLAG_OVERRIDES": getattr(mod, "TRAIN_FLAG_OVERRIDES", {}) or {},
-            "TRAIN_FLAG_OVERRIDES_BY_BENCHMARK": getattr(
-                mod, "TRAIN_FLAG_OVERRIDES_BY_BENCHMARK", {}
-            )
-            or {},
             "TRAIN_EXTRA_ARGS": getattr(mod, "TRAIN_EXTRA_ARGS", []) or [],
             "INFER_DEFAULTS": getattr(mod, "INFER_DEFAULTS", {}) or {},
             "TRAIN_BATCH_SIZES": getattr(mod, "TRAIN_BATCH_SIZES", {}) or {},
@@ -57,7 +53,6 @@ def _load_method_config(method: str) -> dict:
     except Exception:
         return {
             "TRAIN_FLAG_OVERRIDES": {},
-            "TRAIN_FLAG_OVERRIDES_BY_BENCHMARK": {},
             "TRAIN_EXTRA_ARGS": [],
             "INFER_DEFAULTS": {},
             "TRAIN_BATCH_SIZES": {},
@@ -88,6 +83,24 @@ def _benchmark_dir_name(benchmark: str) -> str:
 def _method_dir_name(method: str) -> str:
     # keep dir names stable and simple
     return str(method).strip().lower()
+
+
+def _infer_result_dir(
+    paths: dict, *, benchmark: str, method: str, task_name: str, stage: str
+) -> Path:
+    """
+    推理/评测结果目录::
+
+        RESULT_DIR/<BACKBONE_ID>/<Benchmark>/<method>/<数据集任务名>/<stage>/
+    """
+    return (
+        Path(paths["RESULT_DIR"])
+        / BACKBONE_ID
+        / _benchmark_dir_name(benchmark)
+        / _method_dir_name(method)
+        / str(task_name).strip()
+        / str(stage).strip()
+    )
 
 
 def _method_checkpoint_path(checkpoint_dir: str, benchmark: str, method: str, ckpt_name: str) -> Path:
@@ -337,10 +350,8 @@ def _build_train_command(
         paths["DEEPSPEED_CONFIG"],
         "--lora_enable",
         "True",
-        "--lora_r",
-        "64",
-        "--lora_alpha",
-        "128",
+        # lora_r / lora_alpha：勿在此写死；由 config/methods/<method>.py 的 METHOD_CONFIG*
+        # 与 load_model_for_train 写入 TrainingArguments（HiDe 要求 lora_r 整除 task_num）
         "--mm_projector_lr",
         "2e-5",
         "--benchmark",
@@ -662,12 +673,6 @@ def cmd_train(args: argparse.Namespace) -> int:
 
     flag_overrides = dict(cfg.get("TRAIN_FLAG_OVERRIDES", {}))
     flag_overrides.update(method_cfg.get("TRAIN_FLAG_OVERRIDES", {}))
-    bm_flags = method_cfg.get("TRAIN_FLAG_OVERRIDES_BY_BENCHMARK") or {}
-    if isinstance(bm_flags, dict):
-        bm_key = str(args.benchmark).strip().lower()
-        patch = bm_flags.get(bm_key)
-        if isinstance(patch, dict):
-            flag_overrides.update(patch)
     extra_args = list(cfg.get("TRAIN_EXTRA_ARGS", [])) + list(method_cfg.get("TRAIN_EXTRA_ARGS", []))
     batch_sizes = method_cfg.get("TRAIN_BATCH_SIZES", {})
 
@@ -808,13 +813,12 @@ def cmd_infer(args: argparse.Namespace) -> int:
         )
 
         def _do_infer_eval() -> int:
-            result_dir = (
-                Path(paths["RESULT_DIR"])
-                / BACKBONE_ID
-                / _benchmark_dir_name(args.benchmark)
-                / _method_dir_name(args.method)
-                / task["name"]
-                / args.stage
+            result_dir = _infer_result_dir(
+                paths,
+                benchmark=args.benchmark,
+                method=args.method,
+                task_name=task["name"],
+                stage=args.stage,
             )
             result_dir.mkdir(parents=True, exist_ok=True)
 
@@ -871,13 +875,12 @@ def cmd_infer(args: argparse.Namespace) -> int:
             _log_line(f"log: {log_path}", log_file=log_path, mirror=mirror, lock=log_lock)
             _log_line("=" * 60, log_file=log_path, mirror=mirror, lock=log_lock)
 
-            result_dir = (
-                Path(paths["RESULT_DIR"])
-                / BACKBONE_ID
-                / _benchmark_dir_name(args.benchmark)
-                / _method_dir_name(args.method)
-                / task["name"]
-                / args.stage
+            result_dir = _infer_result_dir(
+                paths,
+                benchmark=args.benchmark,
+                method=args.method,
+                task_name=task["name"],
+                stage=args.stage,
             )
             result_dir.mkdir(parents=True, exist_ok=True)
 

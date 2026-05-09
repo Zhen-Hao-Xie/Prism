@@ -245,7 +245,7 @@ class IA3Model(torch.nn.Module):
 
             if not is_target_modules_in_base_model:
                 is_target_modules_in_base_model = True
-            parent, target, target_name = _get_submodules(self.model, key)
+            parent, target, target_name, _ = _get_submodules(self.model, key)
 
             if isinstance(target, IA3Layer):
                 target.update_layer(
@@ -350,7 +350,7 @@ class IA3Model(torch.nn.Module):
         key_list = [key for key, _ in self.model.named_modules() if "ia3" not in key]
         for key in key_list:
             try:
-                parent, target, target_name = _get_submodules(self.model, key)
+                parent, target, target_name, _ = _get_submodules(self.model, key)
             except AttributeError:
                 continue
             if isinstance(target, IA3Layer):

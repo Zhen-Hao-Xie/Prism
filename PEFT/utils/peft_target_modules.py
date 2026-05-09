@@ -7,6 +7,7 @@ PEFT ``target_modules`` 的预设与解析（按子模块名后缀，如 ``q_pro
 - **预设字符串**（不区分大小写）：
   - ``attention`` 或 ``attn``：注意力 Linear（Vicuna/LLaMA 上一般为 ``q_proj`` / ``k_proj`` / ``v_proj`` / ``o_proj``）；
   - ``ffn`` 或 ``mlp``：FFN（``gate_proj`` / ``up_proj`` / ``down_proj``）；
+  - ``attn_and_ffn``（别名 ``attn_ffn`` / ``attn+ffn`` / ``transformer``）：上述 attention ∪ FFN（**不含** ``lm_head`` 等词表投影；HiDe 等建议用此，避免对 ``lm_head`` 注入导致路径/形状问题）；
   - ``linear`` / ``all`` / ``full``：在 ``exclude_module_path_segments`` 过滤后，对 LLM 内**全部** ``nn.Linear`` 收集子模块名（与参考 SAME ``find_all_linear_names`` 一类行为）。
 - **或** 子模块名列表，如 ``["q_proj", "o_proj", "down_proj"]``，会与当前模型中实际出现名**取交集**。
 
@@ -54,6 +55,8 @@ def resolve_peft_target_spec_to_allowed_suffixes(raw: Any) -> Optional[Set[str]]
         return None
     if low == "attn":
         return set(PEFT_TARGET_MODULE_PRESETS["attention"])
+    if low in ("attn_and_ffn", "attn_ffn", "attn+ffn", "transformer", "transformer_blocks"):
+        return set(PEFT_TARGET_MODULE_PRESETS["attention"]) | set(PEFT_TARGET_MODULE_PRESETS["ffn"])
     if low in PEFT_TARGET_MODULE_PRESETS:
         return set(PEFT_TARGET_MODULE_PRESETS[low])
     if s0.lstrip().startswith("["):

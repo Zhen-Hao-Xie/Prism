@@ -148,10 +148,28 @@ class ModulesToSaveWrapper(torch.nn.Module):
 
 
 def _get_submodules(model, key):
-    parent = model.get_submodule(".".join(key.split(".")[:-1]))
-    layer = key.split(".")[2]
-    target_name = key.split(".")[-1]
+    """
+    解析 ``named_modules`` 的 ``key``，返回 ``parent, target, target_name, layer``。
+
+    ``layer`` 供 HiDe / MoE-LoRA 等按 block 索引区分行为；对 ``*.layers.{i}.*`` 取 ``i``，
+    否则（如 ``model.lm_head``）为 ``-1``。历史实现写死 ``key.split('.')[2]``，
+    在仅含 ``model.lm_head`` 两段路径时会 **IndexError**。
+    """
+    if not key:
+        raise ValueError("_get_submodules: empty key")
+    parts = key.split(".")
+    target_name = parts[-1]
+    parent_path = ".".join(parts[:-1])
+    parent = model if not parent_path else model.get_submodule(parent_path)
     target = model.get_submodule(key)
+    layer = -1
+    if "layers" in parts:
+        li = parts.index("layers")
+        if li + 1 < len(parts):
+            try:
+                layer = int(parts[li + 1])
+            except ValueError:
+                layer = -1
     return parent, target, target_name, layer
 
 
@@ -172,7 +190,7 @@ def _set_trainable(model, adapter_name):
             continue
         target_module_found = any(key.endswith(target_key) for target_key in model.modules_to_save)
         if target_module_found:
-            parent, target, target_name = _get_submodules(model, key)
+            parent, target, target_name, _ = _get_submodules(model, key)
             if isinstance(target, ModulesToSaveWrapper):
                 target.update(adapter_name)
             else:

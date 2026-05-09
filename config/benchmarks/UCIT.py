@@ -112,7 +112,7 @@ UCIT_TASKS = [
         "name": "Flickr30k",
         "train_data_path": f"{UCIT_INSTRUCTION_DIR}/Flickr30k/train_brief_4w.json",
         "test_data_path": f"{UCIT_INSTRUCTION_DIR}/Flickr30k/test_3000.json",
-        "eval_annotation_path": f"{UCIT_INSTRUCTION_DIR}/Flickr30k/val_coco_type.json",
+        "eval_annotation_path": f"{UCIT_INSTRUCTION_DIR}/Flickr30k/test_coco_type.json",
         "output_dir": f"{CHECKPOINT_DIR}/UCIT/Task5_llava",
         "batch_size": 12,
         "previous_task": f"{CHECKPOINT_DIR}/UCIT/Task4_llava",

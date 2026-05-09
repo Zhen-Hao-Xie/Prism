@@ -180,7 +180,7 @@ class AdaptionPromptModel(nn.Module):
             if should_skip_peft_path(name, excl):
                 continue
             if name.endswith(config.target_modules):
-                par, _, _ = _get_submodules(self.model, name)
+                par, _, _, _ = _get_submodules(self.model, name)
                 parents.append(par)
         if len(parents) < config.adapter_layers:
             raise ValueError(
