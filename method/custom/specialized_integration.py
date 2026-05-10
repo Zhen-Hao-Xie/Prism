@@ -110,7 +110,7 @@ class RouterIntegration(CLIntegration):
         self._model_ref: Any = None
         self._prior_expert_vec: Optional[torch.Tensor] = None
         self.mixture_logit_scale: float = float(
-            getattr(config, "mixture_logit_scale", getattr(config, "routing_softmax_scale", 24.0))
+            getattr(config, "mixture_logit_scale", getattr(config, "routing_softmax_scale", 21.0))
         )
         self.peft_expert_layer_name: str = str(
             getattr(
