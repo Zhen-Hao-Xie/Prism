@@ -49,6 +49,12 @@ def train():
 
     configure_pymcit_logging_from_env("TRAIN")
 
+    from backbone.shared.train.checkpoint_use_reentrant_patch import (
+        apply_gradient_checkpoint_use_reentrant_false,
+    )
+
+    apply_gradient_checkpoint_use_reentrant_false()
+
     model_args, data_args, training_args = load_config()
     local_rank = training_args.local_rank
     model, tokenizer, data_args = load_model_for_train(model_args, data_args, training_args)
