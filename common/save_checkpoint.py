@@ -158,11 +158,15 @@ def _full_checkpoint_save(trainer, core_model, output_dir: str):
 # common/save_checkpoint.py
 def save_model(model, training_args, trainer=None, save_extra_state: bool = True):
     """统一的模型保存函数"""
-    
-    print(f"\n{'='*70}")
-    print(f"Saving model | output_dir: {training_args.output_dir}")
-    print(f"{'='*70}\n")
-    
+    _lr = getattr(training_args, "local_rank", None)
+    _lr = -1 if _lr is None else int(_lr)
+    _is_main = _lr in (-1, 0)
+
+    if _is_main:
+        print(f"\n{'='*70}")
+        print(f"Saving model | output_dir: {training_args.output_dir}")
+        print(f"{'='*70}\n")
+
     os.makedirs(training_args.output_dir, exist_ok=True)
 
     _lora_on = bool(getattr(training_args, "lora_enable", False))
@@ -234,7 +238,8 @@ def save_model(model, training_args, trainer=None, save_extra_state: bool = True
             _lr = int(_lr)
         if _lr in (-1, 0):
             _save_cl_extra_state(_core, training_args.output_dir)
-    
-    print(f"\n{'='*70}")
-    print("Model save finished")
-    print(f"{'='*70}\n")
+
+    if _is_main:
+        print(f"\n{'='*70}")
+        print("Model save finished")
+        print(f"{'='*70}\n")

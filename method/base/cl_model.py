@@ -207,8 +207,6 @@ class CLModel(nn.Module):
                 print(f"  text_tower (from base_model.base_model) is None = {text_tower is None}")
         # ===================================
         
-        print(f"{'='*70}\n")
-        
         # 执行 CL 逻辑
         if hasattr(self, '_integration'):
             self._integration.on_input_prep(

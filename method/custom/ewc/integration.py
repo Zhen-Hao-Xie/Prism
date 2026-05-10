@@ -7,6 +7,7 @@ EWC：在 LLM 的 attention + FFN 上注入标准 LoRA；学习任务 t 结束�
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import logging
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -73,6 +74,79 @@ def _fisher_chunk_loss_scale(batch_full: Dict[str, Any], chunk: Dict[str, Any], 
     full_bs = max(1, _infer_batch_size(batch_full))
     chunk_bs = max(1, _infer_batch_size(chunk))
     return torch.tensor(chunk_bs / float(full_bs), device=device, dtype=torch.float32)
+
+
+def _reset_deepspeed_manual_gas_boundary(engine: Any) -> None:
+    """取消手动梯度累积边界，恢复 DeepSpeed 内部根据 micro-step 的默认判定。"""
+    engine._is_gradient_accumulation_boundary = None
+
+
+def _fisher_one_backward(
+    trainer: Any,
+    loss: torch.Tensor,
+) -> None:
+    """与 Trainer 一致地走 backward（DeepSpeed 必须用 ``engine.backward``，否则会触发 ZeRO 错误）。"""
+    ds = getattr(trainer, "deepspeed", None)
+    if ds is not None:
+        ds.backward(loss, scale_wrt_gas=False)
+        return
+    accel = getattr(trainer, "accelerator", None)
+    if accel is not None:
+        accel.backward(loss)
+        return
+    loss.backward()
+
+
+def _fisher_forward_backward_batch(
+    model: nn.Module,
+    trainer: Any,
+    full_batch: Dict[str, Any],
+    chunks: List[Dict[str, Any]],
+) -> bool:
+    """按 chunk 做 forward/backward；成功返回 True。DeepSpeed+ZeRO 下多段 backward 须配合梯度累积边界。"""
+    ds = getattr(trainer, "deepspeed", None)
+
+    if len(chunks) == 1:
+        outputs = model(**chunks[0])
+        loss = getattr(outputs, "loss", None)
+        if loss is None:
+            return False
+        _fisher_one_backward(trainer, loss)
+        return True
+
+    if ds is not None:
+        try:
+            for i, ch in enumerate(chunks):
+                ds.set_gradient_accumulation_boundary(i == len(chunks) - 1)
+                outputs = model(**ch)
+                loss = getattr(outputs, "loss", None)
+                if loss is None:
+                    ds.zero_grad()
+                    return False
+                scale = _fisher_chunk_loss_scale(full_batch, ch, device=loss.device)
+                _fisher_one_backward(trainer, loss * scale)
+            return True
+        finally:
+            _reset_deepspeed_manual_gas_boundary(ds)
+            if hasattr(ds.optimizer, "is_gradient_accumulation_boundary"):
+                ds.optimizer.is_gradient_accumulation_boundary = ds.is_gradient_accumulation_boundary()
+
+    accel = getattr(trainer, "accelerator", None)
+    sync_cm = (
+        accel.accumulate(model)
+        if accel is not None and hasattr(accel, "accumulate")
+        else contextlib.nullcontext()
+    )
+    with sync_cm:
+        for ch in chunks:
+            outputs = model(**ch)
+            loss = getattr(outputs, "loss", None)
+            if loss is None:
+                model.zero_grad(set_to_none=True)
+                return False
+            scale = _fisher_chunk_loss_scale(full_batch, ch, device=loss.device)
+            _fisher_one_backward(trainer, loss * scale)
+    return True
 
 
 def _unwrap_peft_root(model: nn.Module) -> nn.Module:
@@ -193,27 +267,15 @@ class EwcIntegration(CLIntegration):
                 else [batch]
             )
 
-            model.zero_grad(set_to_none=True)
+            if getattr(trainer, "deepspeed", None) is not None:
+                trainer.deepspeed.zero_grad()
+            else:
+                model.zero_grad(set_to_none=True)
+
             with torch.enable_grad():
-                if len(chunks) == 1:
-                    outputs = model(**chunks[0])
-                    loss = getattr(outputs, "loss", None)
-                    if loss is None:
-                        continue
-                    loss.backward()
-                else:
-                    bad = False
-                    for ch in chunks:
-                        outputs = model(**ch)
-                        loss = getattr(outputs, "loss", None)
-                        if loss is None:
-                            bad = True
-                            break
-                        scale = _fisher_chunk_loss_scale(batch, ch, device=loss.device)
-                        (loss * scale).backward()
-                    if bad:
-                        model.zero_grad(set_to_none=True)
-                        continue
+                ok = _fisher_forward_backward_batch(model, trainer, batch, chunks)
+                if not ok:
+                    continue
 
             for name, p in _iter_lora_named_parameters(model):
                 if p.grad is None:
@@ -221,7 +283,10 @@ class EwcIntegration(CLIntegration):
                 g = p.grad.detach().float().cpu().view(-1)
                 accum[name] += g.pow(2)
 
-            model.zero_grad(set_to_none=True)
+            if getattr(trainer, "deepspeed", None) is not None:
+                trainer.deepspeed.zero_grad()
+            else:
+                model.zero_grad(set_to_none=True)
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             count += 1
