@@ -128,12 +128,22 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-new-tokens",
                         dest="max_new_tokens", type=int, default=128)
     parser.add_argument(
-        '--clmethod',
+        "--method",
         type=str,
         default=None,
-        choices=['base', 'hide_llava', 'same', 'simple_prompt', 'smolora',
-                 'protoada', 'disco', 'clmoe', 'sefe', 'modal_prompt'],
-        help='持续学习方法（须与 checkpoint 训练时 method 一致；与 common/load_model.load_model_for_inference 对齐）',
+        help=(
+            "Continual-learning method id (ewc, hide_llava, replay_lora, …); "
+            "must match training. Preferred over --clmethod."
+        ),
+    )
+    parser.add_argument(
+        "--clmethod",
+        type=str,
+        default=None,
+        help=(
+            "Alias for --method (legacy). If neither is set, inference may fall back to "
+            "non-CL / base loading depending on checkpoint layout."
+        ),
     )
     parser.add_argument("--batch-size", type=int, default=1,
                         help="Batch size for inference")
@@ -164,7 +174,8 @@ def build_parser(registry: ModelMethodRegistry) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Unified inference entrypoint for multiple model methods"
     )
-    subparsers = parser.add_subparsers(dest="method", required=True)
+    # NOTE: dest must not be "method" — that name is reserved for CL ``--method`` (ewc, hide_llava, …).
+    subparsers = parser.add_subparsers(dest="infer_mode", required=True)
     registry.add_subparsers(subparsers)
     return parser
 

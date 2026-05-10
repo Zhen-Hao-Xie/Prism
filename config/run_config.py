@@ -8,15 +8,15 @@ Rule:
 
 # ===== Argument defaults (train) =====
 TRAIN_DEFAULTS = {
-    "benchmark": "ucit",
+    "benchmark": "trigap",
     "gpus": "0,1,2,3",
     "port": 29602,
     # True → training subprocess gets PYMCIT_LOG_LEVEL=DEBUG (see run.py / train.py). Does not change batch size.
     "debug": False,
     # hide_llava, olora, replay_lora, ...
-    "method": "ewc",
+    "method": "same",
     # UCIT: when True, append _sub to train/test/eval *.json paths (canonical names in config/benchmarks/UCIT.py).
-    "use_sub_dataset": True,
+    "use_sub_dataset": False,
 }
 
 # Extra args appended at the end of the training command.
@@ -25,14 +25,14 @@ TRAIN_EXTRA_ARGS: list[str] = []
 
 # ===== Argument defaults (infer) =====
 INFER_DEFAULTS = {
-    "benchmark": "ucit",
+    "benchmark": "trigap",
     "gpus": "0,1,2,3",
-    "checkpoint_task": "5",
+    "checkpoint_task": "8",
     "checkpoint_suffix": "_llava",
     "stage": "last",
-    "method": "ewc",
+    "method": "same",
     "temperature": "0",
-    "use_sub_dataset": True,
+    "use_sub_dataset": False,
 }
 
 

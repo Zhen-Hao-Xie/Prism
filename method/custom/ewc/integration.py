@@ -166,7 +166,7 @@ class EwcIntegration(CLIntegration):
         self._anchors: Dict[int, Dict[str, torch.Tensor]] = {}
         self._fisher: Dict[int, Dict[str, torch.Tensor]] = {}
         self._ewc_skip_penalty_for_fisher: bool = False
-        # Chunked penalty on GPU to avoid full-vector temporaries (OOM on large LoRA banks).
+        # Chunked ops on GPU (EWC grad injection uses the same chunk size for temporaries).
         _ch = getattr(config, "ewc_penalty_chunk_elements", 262144)
         self._ewc_penalty_chunk_elements: int = int(_ch) if _ch else 262144
 
@@ -298,11 +298,18 @@ class EwcIntegration(CLIntegration):
                 for n, p in _iter_lora_named_parameters(model)
             }
 
-    def _ewc_penalty(self, model: nn.Module, cur_task: int) -> torch.Tensor:
-        device = next(model.parameters()).device
-        chunk = max(4096, self._ewc_penalty_chunk_elements)
-        total = torch.zeros((), device=device, dtype=torch.float32)
+    def _apply_ewc_grad(self, model: nn.Module, cur_task: int, scale: float) -> None:
+        """
+        Add ``scale * F * (theta - theta_star)`` to LoRA ``param.grad`` (no autograd).
+
+        Matches ``d/dtheta [(lambda/2) * sum F (theta - theta*)^2]`` with
+        ``scale = lambda / gradient_accumulation_steps``. Avoids a forward graph over all LoRA
+        weights (OOM).
+        """
+        if scale == 0.0:
+            return
         ct = int(cur_task)
+        chunk = max(4096, self._ewc_penalty_chunk_elements)
 
         for tid in sorted(self._anchors.keys()):
             if tid >= ct:
@@ -314,27 +321,28 @@ class EwcIntegration(CLIntegration):
             for name, p in _iter_lora_named_parameters(model):
                 if name not in anchors or name not in fisher:
                     continue
+                g = p.grad
+                if g is None:
+                    continue
                 theta_star_cpu = anchors[name]
                 fdiag_cpu = fisher[name]
                 if theta_star_cpu.numel() != fdiag_cpu.numel():
                     continue
-                theta_flat = p.reshape(-1).float()
-                n = theta_flat.numel()
+                n = p.numel()
                 if theta_star_cpu.numel() != n:
                     continue
-                # Anchors keep parameter layout (often 2D); Fisher rows are stored flat. Flatten
-                # before chunk slicing — indexing [i:j] on a 2D tensor slices dim 0, not elements.
                 theta_star_flat = theta_star_cpu.reshape(-1)
+                gf = g.flatten()
+                wf = p.data.flatten()
                 i = 0
                 while i < n:
                     j = min(i + chunk, n)
-                    ts = theta_star_flat[i:j].to(device=device, dtype=torch.float32, non_blocking=True)
-                    fd = fdiag_cpu[i:j].to(device=device, dtype=torch.float32, non_blocking=True)
-                    th = theta_flat[i:j]
-                    d = th - ts
-                    total = total + (fd * d * d).sum()
+                    fd = fdiag_cpu[i:j].to(device=p.device, dtype=torch.float32, non_blocking=True)
+                    ts = theta_star_flat[i:j].to(device=p.device, dtype=torch.float32, non_blocking=True)
+                    diff = wf[i:j].float() - ts
+                    upd = (scale * fd * diff).to(dtype=gf.dtype)
+                    gf[i:j].add_(upd)
                     i = j
-        return total
 
     def on_input_prep(self, model: nn.Module, args: tuple, kwargs: dict, context: CLContext) -> None:
         return
@@ -343,22 +351,30 @@ class EwcIntegration(CLIntegration):
         return
 
     def on_forward_end(self, model: nn.Module, outputs: Any, context: CLContext) -> Any:
-        if getattr(self, "_ewc_skip_penalty_for_fisher", False):
-            return outputs
-        if not model.training:
-            return outputs
-        loss = getattr(outputs, "loss", None)
-        if loss is None:
-            return outputs
+        # EWC is applied in ``on_training_batch_end`` via gradient injection (``_apply_ewc_grad``).
+        return outputs
 
+    def on_training_batch_end(
+        self,
+        model: nn.Module,
+        context: CLContext,
+        batch: Dict[str, Any],
+        *,
+        loss: Optional[torch.Tensor] = None,
+        trainer: Any = None,
+    ) -> None:
+        if getattr(self, "_ewc_skip_penalty_for_fisher", False):
+            return
+        if trainer is None:
+            return
+        if not model.training:
+            return
         ct = int(getattr(context, "task_id", getattr(self.config, "cur_task", self.cur_task)))
         if ct < 1:
-            return outputs
-
-        pen = self._ewc_penalty(model, ct)
-        reg = 0.5 * float(self.ewc_lambda) * pen.to(dtype=loss.dtype, device=loss.device)
-        outputs.loss = loss + reg
-        return outputs
+            return
+        gas = max(1, int(getattr(trainer.args, "gradient_accumulation_steps", 1)))
+        scale = float(self.ewc_lambda) / float(gas)
+        self._apply_ewc_grad(model, ct, scale)
 
     def on_task_end(self, model: nn.Module, context: CLContext, task_id: int) -> None:
         pass
@@ -369,6 +385,7 @@ class EwcIntegration(CLIntegration):
             "ewc_fisher_batches": self.ewc_fisher_batches,
             "ewc_fisher_micro_batch_size": self.ewc_fisher_micro_batch_size,
             "ewc_penalty_chunk_elements": self._ewc_penalty_chunk_elements,
+            "ewc_grad_mode": "backward_add",
             "lora_r": int(getattr(self.config, "lora_r", 64)),
         }
 

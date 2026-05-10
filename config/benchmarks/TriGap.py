@@ -1,13 +1,5 @@
 import os
-
-BACKBONE_CONFIG = os.getenv("APP_CONFIG", "instruct")
-
-if BACKBONE_CONFIG == 'base':
-    from ..paths.paths_config_base import INSTRUCTION_DIR, CHECKPOINT_DIR, PRETRAIN_MM_PROJECTOR
-elif BACKBONE_CONFIG == 'instruct':
-    from ..paths.paths_config_instruct import INSTRUCTION_DIR, CHECKPOINT_DIR, PRETRAIN_MM_PROJECTOR
-else:
-    raise ValueError(f"Unknown config: {BACKBONE_CONFIG}")
+from ..paths.llava_paths import CHECKPOINT_DIR, INSTRUCTION_DIR, PRETRAIN_MM_PROJECTOR
 
 TRIGAP_INSTRUCTION_DIR = "/root/autodl-tmp/TriGap/instructions"
 TRIGAP_IMAGE_DIR = "/root/autodl-tmp/TriGap/datasets"
@@ -134,4 +126,65 @@ TRIGAP_TASKS = [
             "needs_conversion": False,
         }
     },
+    {
+        "cur_task": 6,
+        "name": "Roadside",
+        "train_data_path": f"{TRIGAP_INSTRUCTION_DIR}/Roadside/train_standard_4w.json",
+        "test_data_path": f"{TRIGAP_INSTRUCTION_DIR}/Roadside/test_standard_3k.json",
+        "eval_annotation_path": f"{TRIGAP_INSTRUCTION_DIR}/Roadside/test_standard_3k.json",
+        "output_dir": f"{CHECKPOINT_DIR}/TriGap/Task6_llava_lora",
+        "batch_size": 12,
+        "previous_task": f"{CHECKPOINT_DIR}/TriGap/Task5_llava_lora",
+        "image_folder": TRIGAP_IMAGE_DIR,
+        "eval": {
+            "inference_args": [],
+            "eval_args": [
+                "--annotation-file", "{eval_annotation_path}",
+                "--result-file", "{result_file}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
+    },
+    {
+        "cur_task": 7,
+        "name": "ChemVQA",
+        "train_data_path": f"{TRIGAP_INSTRUCTION_DIR}/ChemVQA/train_standard_4w.json",
+        "test_data_path": f"{TRIGAP_INSTRUCTION_DIR}/ChemVQA/test_standard_3k.json",
+        "eval_annotation_path": f"{TRIGAP_INSTRUCTION_DIR}/ChemVQA/test_standard_3k.json",
+        "output_dir": f"{CHECKPOINT_DIR}/TriGap/Task7_llava_lora",
+        "batch_size": 12,
+        "previous_task": f"{CHECKPOINT_DIR}/TriGap/Task6_llava_lora",
+        "image_folder": TRIGAP_IMAGE_DIR,
+        "eval": {
+            "inference_args": [],
+            "eval_args": [
+                "--annotation-file", "{eval_annotation_path}",
+                "--result-file", "{result_file}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
+    },
+    {
+        "cur_task": 8,
+        "name": "FloodNetVQA",
+        "train_data_path": f"{TRIGAP_INSTRUCTION_DIR}/FloodNetVQA/train_standard_4w.json",
+        "test_data_path": f"{TRIGAP_INSTRUCTION_DIR}/FloodNetVQA/test_standard_3k.json",
+        "eval_annotation_path": f"{TRIGAP_INSTRUCTION_DIR}/FloodNetVQA/test_standard_3k.json",
+        "output_dir": f"{CHECKPOINT_DIR}/TriGap/Task8_llava_lora",
+        "batch_size": 12,
+        "previous_task": f"{CHECKPOINT_DIR}/TriGap/Task7_llava_lora",
+        "image_folder": TRIGAP_IMAGE_DIR,
+        "eval": {
+            "inference_args": [],
+            "eval_args": [
+                "--annotation-file", "{eval_annotation_path}",
+                "--result-file", "{result_file}",
+                "--output-dir", "{output_dir}"
+            ],
+            "needs_conversion": False,
+        }
+    },
+
 ]

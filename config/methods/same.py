@@ -47,6 +47,14 @@ TRAIN_BATCH_SIZES = {
         4: 12,
         5: 12,
     },
+    "trigap": {
+        0: 12,
+        1: 12,
+        2: 12,
+        3: 12,
+        4: 12,
+        5: 12,
+    },
 }
 
 METHOD_CONFIG = {
@@ -71,5 +79,9 @@ METHOD_CONFIG_BY_BENCHMARK = {
     "ucit": {
         "lora_r": 48,
         "lora_alpha": 96,
+    },
+    "trigap": {
+        "lora_r": 72,
+        "lora_alpha": 144,
     },
 }

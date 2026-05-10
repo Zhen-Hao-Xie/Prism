@@ -46,9 +46,9 @@ METHOD_CONFIG = {
     "ewc_lambda": 5000.0,
     "ewc_fisher_batches": 50,
     # Fisher accumulation runs at on_train_end (not tied to per-device batch); tune per GPU memory
-    "ewc_fisher_micro_batch_size": 2,
-    # Forward EWC penalty chunks (elements per slice) to limit GPU temporaries; lower if still OOM.
-    "ewc_penalty_chunk_elements": 262144,
+    "ewc_fisher_micro_batch_size": 1,
+    # Chunked EWC grad injection (elements per slice) to cap GPU temporaries; lower if still OOM.
+    "ewc_penalty_chunk_elements": 16384,
 }
 
 METHOD_CONFIG_BY_BENCHMARK = {

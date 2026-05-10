@@ -1,4 +1,5 @@
 # -*- encoding: utf-8 -*-
+import inspect
 import warnings
 import math
 from dataclasses import dataclass, field
@@ -30,6 +31,23 @@ from ...import_utils import is_bnb_4bit_available, is_bnb_available
 
 if is_bnb_available():
     import bitsandbytes as bnb
+
+
+def _same_inside_activation_checkpoint_recompute() -> bool:
+    frame = inspect.currentframe()
+    try:
+        f = frame
+        while f is not None:
+            co = f.f_code
+            if co.co_name == "recompute_fn":
+                path = co.co_filename.replace("\\", "/")
+                if "torch/utils/checkpoint" in path:
+                    return True
+            f = f.f_back
+    finally:
+        del frame
+    return False
+
 
 @dataclass
 class SAMEConfig(LoraConfig):
@@ -404,114 +422,6 @@ class SAMELinear(nn.Linear, SAMELayer):
         grad_perp = grad - grad_parallel
         return grad_parallel_scaled + grad_perp
     
-    # def _make_curvature_hook(self, name, expert_id, adapter):
-    #     """Orthogonal projection to nullspace (Lu et al., Consistent MoE Prompt)"""
-    #     def hook(grad):
-    #         if not self.training or self.cur_task == 0:
-    #             return grad
-            
-    #         cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}")
-    #         if not cov_prev_valid:
-    #             assert(0)
-    #             return grad
-
-    #         device = grad.device
-    #         # U_prev: eigvecs of covariance (paper V); S_prev: eigenvalues (sing.val^2)
-    #         U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
-    #         S_prev = getattr(self, f"cov_S_prev_{adapter}").to(device)
-            
-    #         # Paper method: singular-value threshold for null space (not energy ratio)
-    #         # Smallest nonzero singular value
-    #         nonzero_mask = S_prev > 1e-8 * S_prev.max()
-    #         if nonzero_mask.sum() == 0:
-    #             return grad
-    #         lambda_min = S_prev[nonzero_mask].min()
-            
-    #         # Null-space threshold (alpha often 1e-3)
-    #         alpha = 1e-3
-    #         null_mask = S_prev < (alpha * lambda_min)
-            
-    #         # Null-space basis V_null (paper \tilde{V})
-    #         U_null = U_prev[:, null_mask]
-            
-    #         if U_null.size(1) == 0:
-    #             return grad
-            
-    #         # Projection matrix H = V_null @ V_null.T (paper Eq. 23)
-    #         # Efficiency: apply grad @ H without building full H
-    #         grad_t = grad.t()
-    #         # Project to nullspace: grad_proj = U_null @ (U_null.T @ grad_t)
-    #         projected_grad_t = U_null @ (U_null.t() @ grad_t)
-            
-    #         # Expert relaxation (paper Eq. 21): Delta P = [eta * H + (1-eta) * I] @ Grad
-    #         # Expert params: eta relaxation (~0.99); router: eta=1.0
-    #         eta = 0.99 
-    #         scaled_grad_t = eta * projected_grad_t + (1 - eta) * grad_t
-            
-    #         scaled_grad = scaled_grad_t.t()
-
-    #         # Write scaled grad back
-    #         grad_norm_before = grad.norm().item()
-    #         grad.data.copy_(scaled_grad.data)
-    #         grad_norm_after = grad.norm().item()
-    #             #         grad_norm_after = grad.norm().item()
-
-    #         if grad_norm_before > 1e-10:
-    #             ratio = grad_norm_after / grad_norm_before
-    #             print(f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id},ratio={ratio:.2f}x")
-
-    #         return scaled_grad
-    #     return hook
-    
-
-    
-    # def _make_curvature_hook(self, name, expert_id, adapter):
-    #     """Hard orthogonal projection: keep ~95% energy directions"""
-    #     def hook(grad):
-    #         if not self.training or self.cur_task == 0:
-    #             return grad
-            
-    #         cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}")
-    #         if not cov_prev_valid:
-    #             assert(0);
-    #             return grad
-
-    #         device = grad.device
-    #         U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
-    #         S_prev = getattr(self, f"cov_S_prev_{adapter}").to(device)
-            
-    #         # Cumulative energy ratio to choose retained rank k
-    #         energy = S_prev ** 2
-    #         total_energy = energy.sum()
-            
-    #         # Cumulative sum for energy ratio
-    #         cumsum = torch.cumsum(energy, dim=0)
-    #         ratio = cumsum / total_energy
-            
-    #         # First index past 0.9 cumulative energy
-    #         k = (ratio <= 0.9).sum().item() + 1
-    #         k = min(k, len(S_prev))  # clamp
-            
-    #         if k == 0:
-    #             assert(0);
-    #             return grad
-    #         grad_t = grad.t()
-    #         proj_parallel = U_prev[:, :k] @ (U_prev[:, :k].t() @ grad_t)
-    #         proj_perp = grad_t - proj_parallel
-    #         scaled_grad = proj_perp.t()
-    #         grad_norm_before = grad.norm().item()
-    #         grad.data.copy_(scaled_grad.data)
-
-    #         grad_norm_after = grad.norm().item()
-
-    #         # if grad_norm_before > 1e-10:
-    #         #     ratio = grad_norm_after / grad_norm_before
-    #         #     print(f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id} | "
-    #         #           f"k={k}/{len(S_prev)}, ratio={ratio:.2f}x")
-    #         return scaled_grad
-    #     return hook
-    
-
     def _make_curvature_hook(self, name, expert_id, adapter):
         def hook(grad):
             if not self.training or self.cur_task == 0:
@@ -600,18 +510,19 @@ class SAMELinear(nn.Linear, SAMELayer):
             x = x.to(self.lora_A[self.active_adapter].loraA[0].weight.dtype)
             if self.training:
                 x_flat = x.view(-1, x.size(-1))
-                self._update_router_covariance(x_flat, self.active_adapter)
+                if not _same_inside_activation_checkpoint_recompute():
+                    self._update_router_covariance(x_flat, self.active_adapter)
                 router_logits = self.lora_router[self.active_adapter](x.view(-1, x.size(-1)))
-                g_phi = F.softmax(router_logits, dim=-1)
-                g_phi_mean = g_phi.mean(dim=0)
+                g_phi = F.softmax(router_logits, dim=-1).to(dtype=x.dtype)
+                g_phi_mean = g_phi.mean(dim=0).to(dtype=x.dtype)
                 g_phi_mean = self._get_masked_routing(g_phi_mean)
-                final_routing=g_phi_mean
+                final_routing = g_phi_mean.to(dtype=x.dtype)
             else:
                 router_logits = self.lora_router[self.active_adapter](x.view(-1, x.size(-1)))/self.expert_num
                 g_phi = F.softmax(router_logits, dim=-1)
                 g_phi_mean = g_phi.mean(dim=0)
-                final_routing = self._apply_topk_sparsification(g_phi_mean, self.router, k=1)
-            
+                final_routing = self._apply_topk_sparsification(g_phi_mean, self.router, k=1).to(dtype=x.dtype)
+
             final_routing = final_routing.to(self.lora_A[self.active_adapter].loraA[0].weight.dtype)
             lora_a_output = self.lora_A[self.active_adapter](x, final_routing)
             lora_b_output = self.lora_B[self.active_adapter](lora_a_output, final_routing)
@@ -621,7 +532,7 @@ class SAMELinear(nn.Linear, SAMELayer):
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
         result = result.to(previous_dtype)
 
-        if self.training:
+        if self.training and not _same_inside_activation_checkpoint_recompute():
             self.current_step += 1
             with torch.no_grad():
                 self._update_activation_metrics(g_phi, x.view(-1, x.size(-1)))
@@ -631,39 +542,46 @@ class SAMELinear(nn.Linear, SAMELayer):
         return result
 
     def _update_router_covariance(self, x_flat, adapter):
+        """Online covariance / spectral stats for router hooks.
+
+        Must not build autograd edges from ``x_flat``: with gradient checkpointing,
+        the first forward can take the full QR branch while recomputation skips it
+        (different ``current_step`` / ``cov_alpha``), which triggers
+        ``CheckpointError`` (mismatching saved tensor counts).
+        """
         device = x_flat.device
         batch_size = x_flat.size(0)
-        
+
         cov_alpha = getattr(self, f"cov_alpha_{adapter}")
-        
-        if cov_alpha == 0 or self.current_step % 20 == 0:
-            d = x_flat.size(-1)
-            k = min(self.max_components, d)
 
-            x_centered = x_flat - x_flat.mean(dim=0, keepdim=True)
+        with torch.no_grad():
+            if cov_alpha == 0 or self.current_step % 20 == 0:
+                d = x_flat.size(-1)
+                k = min(self.max_components, d)
 
-            original_dtype = x_flat.dtype
-            if original_dtype in [torch.bfloat16, torch.float16]:
-                compute_dtype = torch.float32
-            else:
-                compute_dtype = original_dtype
+                x_centered = x_flat - x_flat.mean(dim=0, keepdim=True)
 
-            Q = torch.randn(d, k, device=device, dtype=compute_dtype)
-            x_centered_comp = x_centered.to(compute_dtype)
-            Y = x_centered_comp.t() @ (x_centered_comp @ Q)
-            
-            U_approx, _ = torch.linalg.qr(Y, mode='reduced')
-            U_approx = U_approx.to(original_dtype)
-            
-            proj_x = x_centered @ U_approx
-            S_approx = torch.sqrt(torch.sum(proj_x ** 2, dim=0) / (batch_size - 1 + 1e-8))
-            S_approx = S_approx.to(original_dtype)
+                original_dtype = x_flat.dtype
+                if original_dtype in [torch.bfloat16, torch.float16]:
+                    compute_dtype = torch.float32
+                else:
+                    compute_dtype = original_dtype
 
-            setattr(self, f"cov_U_{adapter}", U_approx)
-            setattr(self, f"cov_S_{adapter}", S_approx)
+                Q = torch.randn(d, k, device=device, dtype=compute_dtype)
+                x_centered_comp = x_centered.to(compute_dtype)
+                Y = x_centered_comp.t() @ (x_centered_comp @ Q)
 
+                U_approx, _ = torch.linalg.qr(Y, mode="reduced")
+                U_approx = U_approx.to(original_dtype)
 
-        setattr(self, f"cov_alpha_{adapter}", cov_alpha + batch_size)
+                proj_x = x_centered @ U_approx
+                S_approx = torch.sqrt(torch.sum(proj_x ** 2, dim=0) / (batch_size - 1 + 1e-8))
+                S_approx = S_approx.to(original_dtype)
+
+                setattr(self, f"cov_U_{adapter}", U_approx)
+                setattr(self, f"cov_S_{adapter}", S_approx)
+
+            setattr(self, f"cov_alpha_{adapter}", cov_alpha + batch_size)
 
     def _update_activation_metrics(self, routing_probs, x_flat):
         adapter = self.active_adapter
@@ -719,16 +637,17 @@ class SAMELinear(nn.Linear, SAMELayer):
     def _get_masked_routing(self, routing_probs):
         adapter = self.active_adapter
         device = routing_probs.device
+        rdtype = routing_probs.dtype
 
-        masks = getattr(self, f"expert_masks_{adapter}").to(device)
-        
+        masks = getattr(self, f"expert_masks_{adapter}").to(device=device, dtype=rdtype)
+
         masked = routing_probs * masks
         masked_sum = masked.sum(dim=-1, keepdim=True)
         if masked_sum.min() == 0:
             current_task_expert = min(self.cur_task, self.expert_num - 1)
-            masked[:, current_task_expert] = 1.0
+            masked[:, current_task_expert] = torch.ones_like(masked[:, current_task_expert])
             masked_sum = masked.sum(dim=-1, keepdim=True)
-        
+
         return masked / masked_sum
 
     def save_task_covariance_snapshot(self, adapter):
@@ -772,9 +691,10 @@ class SAMELinearA(nn.Module):
         self.layer_id = layer_id
 
     def forward(self, x, routing_weights):
-        output = self.loraA[0](x) * routing_weights[0]
+        rw = routing_weights.to(dtype=x.dtype)
+        output = self.loraA[0](x) * rw[0]
         for i in range(1, self.expert_num):
-            output += self.loraA[i](x) * routing_weights[i]
+            output += self.loraA[i](x) * rw[i]
         return output
 
 class SAMELinearB(nn.Module):
@@ -786,9 +706,10 @@ class SAMELinearB(nn.Module):
         self.layer_id = layer_id
 
     def forward(self, x, routing_weights):
-        output = self.loraB[0](x) * routing_weights[0]
+        rw = routing_weights.to(dtype=x.dtype)
+        output = self.loraB[0](x) * rw[0]
         for i in range(1, self.expert_num):
-            output += self.loraB[i](x) * routing_weights[i]
+            output += self.loraB[i](x) * rw[i]
         return output
 
 class SAMEExpert(nn.Module):

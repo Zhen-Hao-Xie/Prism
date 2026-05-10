@@ -14,6 +14,15 @@ from backbone.shared.multimodal.data_processor import get_model_name_from_path
 from backbone.shared.data import InferenceDataset
 
 
+def _resolved_cl_method(args: Any) -> Optional[str]:
+    """CLI ``--method`` (preferred) or legacy ``--clmethod``; must not collide with subparser names."""
+    for key in ("method", "clmethod"):
+        v = getattr(args, key, None)
+        if isinstance(v, str) and v.strip():
+            return v.strip().lower()
+    return None
+
+
 @dataclass
 class InferenceContext:
     args: Any
@@ -40,7 +49,8 @@ class InferenceEngine:
     def _load_model(self, args: Any) -> Tuple[Any, Any, Any, str]:
         from common.load_model import load_model_for_inference
 
-        _m = str(getattr(args, "method", "") or "").strip().lower()
+        cl_method = _resolved_cl_method(args)
+        _m = str(cl_method or "").strip().lower()
         if _m == "zeroshot":
             mb = getattr(args, "model_base", None)
             if not mb:
@@ -62,7 +72,7 @@ class InferenceEngine:
             mp,
             args.model_base,
             model_name,
-            method=args.method,
+            method=cl_method,
             text_tower=getattr(args, "text_tower", None),
             benchmark=getattr(args, "benchmark", None),
             task_num=getattr(args, "cl_task_num", None),
