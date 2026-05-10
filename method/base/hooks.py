@@ -86,3 +86,5 @@ class HookManager:
     def get_registered_hooks(self) -> Dict[str, Callable]:
         """获取已注册的 Hook 字典"""
         return self.hook_registry.copy()
+    
+    

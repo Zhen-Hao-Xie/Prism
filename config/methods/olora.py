@@ -1,24 +1,6 @@
-"""
-Defaults for method: olora (O-LoRA, Wang et al., arXiv:2310.14152).
-
-与论文 / 官方实现（https://github.com/cmnfriend/O-LoRA）对齐要点：
-
-**注入模块（§3.2 末）**：原文沿用 Hu et al. (2021)，LoRA **仅加在注意力 W_q、W_v** 上；LLaMA/Vicuna 中对应 ``q_proj``、``v_proj``（本配置使用预设 ``attn_qv``）。
-
-**损失（式 (7)(8)）**：CE + λ₁·Σ L_orth，``olora_lambda`` 对应 λ₁。官方脚本 ``scripts/order_1.sh`` 为 ``lamda_1=0.5``、``lamda_2=0``。
-
-**优化**：官方 T5 脚本 ``learning_rate=1e-3``、``lr_scheduler_type=constant``、``warmup_steps=0``（等价于不在此处做 warmup）；``num_train_epochs=1``。
-
-**LoRA 秩与缩放**：官方 ``run_uie_lora.py`` 默认 ``lora_dim=8``（即秩 r=8）、构造适配器时 ``lora_alpha=32``、``lora_dropout=0.1``，故 **α/r = 4**。
-本仓库 O-LoRA 将总秩 ``lora_r`` **按任务槽数 task_num 均分**，为使**每槽有效秩仍为 8**，取 ``lora_r = 8 × task_num``；
-并保持 ``lora_alpha / lora_r = 4``（与官方一致）：``lora_alpha = 4 × lora_r``。
-
-多模态 batch、序列长等与原文 T5 不同，见 ``TRAIN_BATCH_SIZES`` / ``run.py``；若显存允许可参考原文 ``per_device_train_batch_size=8`` 适当加大。
-"""
-
 from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
-# This is the official setting
+
 # TRAIN_FLAG_OVERRIDES = {
 #     "--method": "olora",
 #     "--mm_projector_lr": "1e-3",

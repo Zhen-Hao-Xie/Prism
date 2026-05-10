@@ -30,12 +30,12 @@ TRAIN_BATCH_SIZES = {
         7: 12,
     },
     "ucit": {
-        0: 12,
-        1: 12,
-        2: 12,
-        3: 12,
-        4: 12,
-        5: 12,
+        0: 8,
+        1: 8,
+        2: 8,
+        3: 8,
+        4: 8,
+        5: 8,
     },
 }
 
@@ -45,6 +45,8 @@ METHOD_CONFIG = {
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
     "ewc_lambda": 5000.0,
     "ewc_fisher_batches": 50,
+    # Fisher 在 on_train_end 跑，与训练 per_device_batch 无关；过小慢、过大易 OOM，可按卡调整
+    "ewc_fisher_micro_batch_size": 2,
 }
 
 METHOD_CONFIG_BY_BENCHMARK = {

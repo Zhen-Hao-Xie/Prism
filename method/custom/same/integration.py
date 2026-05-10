@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import torch
 
 from method.base.context import CLContext
-from method.base.router import RouterIntegration
+from method.custom.specialized_integration import RouterIntegration
 from method.base.peft_extension import register_peft_extension
 from backbone.shared.peft_llm_targets import collect_peft_target_linear_suffixes
 from method.factory import CLMethodFactory

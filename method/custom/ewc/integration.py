@@ -7,18 +7,72 @@ EWC：在 LLM 的 attention + FFN 上注入标准 LoRA；学习任务 t 结束�
 
 from __future__ import annotations
 
+import gc
 import logging
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 
+from config.backbones.constants import IGNORE_INDEX
 from backbone.shared.peft_llm_targets import collect_peft_target_linear_suffixes
 from method.base.context import CLContext
 from method.base.integration import CLIntegration
 from method.factory import CLMethodFactory
 
 _LOG = logging.getLogger(__name__)
+
+
+def _infer_batch_size(batch: Dict[str, Any]) -> int:
+    for key in ("input_ids", "labels"):
+        v = batch.get(key)
+        if isinstance(v, torch.Tensor) and v.dim() >= 1:
+            return int(v.shape[0])
+    for v in batch.values():
+        if isinstance(v, torch.Tensor) and v.dim() >= 1:
+            return int(v.shape[0])
+    return 1
+
+
+def _split_batch_rows(
+    batch: Dict[str, Any], start: int, end: int, batch_size: int
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for k, v in batch.items():
+        if isinstance(v, torch.Tensor) and v.shape[0] == batch_size:
+            out[k] = v[start:end]
+        elif isinstance(v, list) and len(v) == batch_size:
+            out[k] = v[start:end]
+        else:
+            out[k] = v
+    return out
+
+
+def _microbatch_chunks(batch: Dict[str, Any], micro_bs: int) -> List[Dict[str, Any]]:
+    bs = _infer_batch_size(batch)
+    if micro_bs <= 0 or bs <= micro_bs:
+        return [batch]
+    return [
+        _split_batch_rows(batch, i, min(i + micro_bs, bs), bs)
+        for i in range(0, bs, micro_bs)
+    ]
+
+
+def _masked_label_count(labels: torch.Tensor) -> torch.Tensor:
+    return (labels != IGNORE_INDEX).sum().to(dtype=torch.float32).clamp(min=1.0)
+
+
+def _fisher_chunk_loss_scale(batch_full: Dict[str, Any], chunk: Dict[str, Any], *, device: torch.device) -> torch.Tensor:
+    """将子 batch 上 HF 返回的 mean(loss) 换算成对「整 batch 标量 loss」的贡献：scale = T_chunk / T_full。"""
+    lf = batch_full.get("labels")
+    lc = chunk.get("labels")
+    if isinstance(lf, torch.Tensor) and isinstance(lc, torch.Tensor):
+        full_d = _masked_label_count(lf)
+        chunk_d = _masked_label_count(lc)
+        return (chunk_d / full_d).to(device=device, dtype=torch.float32)
+    full_bs = max(1, _infer_batch_size(batch_full))
+    chunk_bs = max(1, _infer_batch_size(chunk))
+    return torch.tensor(chunk_bs / float(full_bs), device=device, dtype=torch.float32)
 
 
 def _unwrap_peft_root(model: nn.Module) -> nn.Module:
@@ -43,6 +97,12 @@ class EwcIntegration(CLIntegration):
         self.cur_task: int = int(getattr(config, "cur_task", 0))
         self.ewc_lambda: float = float(getattr(config, "ewc_lambda", 5000.0))
         self.ewc_fisher_batches: int = int(getattr(config, "ewc_fisher_batches", 50))
+        # None：不拆 micro-batch（与旧行为一致）；建议 1～4 以降低任务结束时 Fisher 反向的峰值显存
+        self.ewc_fisher_micro_batch_size: Optional[int] = getattr(
+            config, "ewc_fisher_micro_batch_size", None
+        )
+        if self.ewc_fisher_micro_batch_size is not None:
+            self.ewc_fisher_micro_batch_size = int(self.ewc_fisher_micro_batch_size)
 
         # task_id -> { full_param_name -> tensor CPU }
         self._anchors: Dict[int, Dict[str, torch.Tensor]] = {}
@@ -53,9 +113,10 @@ class EwcIntegration(CLIntegration):
             p.requires_grad = False
         self._setup_lora(model)
         _LOG.info(
-            "[EWC] LoRA injected | λ=%s | Fisher batches/task_end=%s",
+            "[EWC] LoRA injected | λ=%s | Fisher batches/task_end=%s | Fisher micro-batch=%s",
             self.ewc_lambda,
             self.ewc_fisher_batches,
+            self.ewc_fisher_micro_batch_size,
         )
 
     def _find_target_modules(self, model: nn.Module) -> List[str]:
@@ -95,7 +156,6 @@ class EwcIntegration(CLIntegration):
     def _estimate_fisher_diagonal(
         self, model: nn.Module, trainer: Any, task_id: int
     ) -> None:
-        """在 eval + grad 下对若干 train batch 累积 ∂log p/∂θ 的平方平均（对角 Fisher）。"""
         n_batches = max(1, self.ewc_fisher_batches)
         loader = trainer.get_train_dataloader()
         accum: Dict[str, torch.Tensor] = {}
@@ -103,6 +163,18 @@ class EwcIntegration(CLIntegration):
 
         was_training = model.training
         model.eval()
+
+        if torch.cuda.is_available():
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        micro_bs = self.ewc_fisher_micro_batch_size
+        if micro_bs is not None and micro_bs > 0:
+            _LOG.info(
+                "[EWC] Fisher diagonal: micro-batch=%s (train batch size does not apply here — "
+                "OOM at task end is often this pass; lower micro-batch if needed)",
+                micro_bs,
+            )
 
         for name, p in _iter_lora_named_parameters(model):
             accum[name] = torch.zeros(p.numel(), dtype=torch.float32)
@@ -115,13 +187,33 @@ class EwcIntegration(CLIntegration):
                 break
             batch = trainer._prepare_inputs(batch)
 
+            chunks = (
+                _microbatch_chunks(batch, micro_bs)
+                if micro_bs is not None and micro_bs > 0
+                else [batch]
+            )
+
             model.zero_grad(set_to_none=True)
             with torch.enable_grad():
-                outputs = model(**batch)
-                loss = getattr(outputs, "loss", None)
-                if loss is None:
-                    continue
-                loss.backward()
+                if len(chunks) == 1:
+                    outputs = model(**chunks[0])
+                    loss = getattr(outputs, "loss", None)
+                    if loss is None:
+                        continue
+                    loss.backward()
+                else:
+                    bad = False
+                    for ch in chunks:
+                        outputs = model(**ch)
+                        loss = getattr(outputs, "loss", None)
+                        if loss is None:
+                            bad = True
+                            break
+                        scale = _fisher_chunk_loss_scale(batch, ch, device=loss.device)
+                        (loss * scale).backward()
+                    if bad:
+                        model.zero_grad(set_to_none=True)
+                        continue
 
             for name, p in _iter_lora_named_parameters(model):
                 if p.grad is None:
@@ -130,6 +222,8 @@ class EwcIntegration(CLIntegration):
                 accum[name] += g.pow(2)
 
             model.zero_grad(set_to_none=True)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             count += 1
 
         if count == 0:
@@ -168,7 +262,6 @@ class EwcIntegration(CLIntegration):
             }
 
     def _ewc_penalty(self, model: nn.Module, cur_task: int) -> torch.Tensor:
-        """Σ_task Σ_i F_i (θ_i - θ*_i)²，对所有已完成任务 task < cur_task 累加。"""
         device = next(model.parameters()).device
         total = torch.zeros((), device=device, dtype=torch.float32)
         ct = int(cur_task)
@@ -219,6 +312,7 @@ class EwcIntegration(CLIntegration):
         return {
             "ewc_lambda": self.ewc_lambda,
             "ewc_fisher_batches": self.ewc_fisher_batches,
+            "ewc_fisher_micro_batch_size": self.ewc_fisher_micro_batch_size,
             "lora_r": int(getattr(self.config, "lora_r", 64)),
         }
 
