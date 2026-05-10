@@ -114,12 +114,11 @@ Key training knobs (memory size, task schedule, etc.) follow each benchmark’s 
 
 ## License
 
-This repository does not ship a bundled license file by default. Add a **`LICENSE`** file when you publish the project and describe terms there.
+
 
 ## Acknowledgments
 
-This project builds on ideas and code patterns from the broader **continual learning** and **multimodal LLM** communities. Internally it integrates **LLaVA-style** multimodal training flows, **PEFT / LoRA** adapters (including custom tuners under `PEFT/`), and **DeepSpeed** for scalable training.
 
 ## Contact
 
-For bug reports and feature requests, please open an issue in the repository. 
+If there are any questions, please feel free to  propose new features by opening an issue or contact with the author: **Jun-Tao Tang**([juntao_tang@outlook.com](mailto:juntao_tang@outlook.com)) and **Shi-Yu Cheng**(). Enjoy the code.

@@ -322,10 +322,13 @@ class EwcIntegration(CLIntegration):
                 n = theta_flat.numel()
                 if theta_star_cpu.numel() != n:
                     continue
+                # Anchors keep parameter layout (often 2D); Fisher rows are stored flat. Flatten
+                # before chunk slicing — indexing [i:j] on a 2D tensor slices dim 0, not elements.
+                theta_star_flat = theta_star_cpu.reshape(-1)
                 i = 0
                 while i < n:
                     j = min(i + chunk, n)
-                    ts = theta_star_cpu[i:j].to(device=device, dtype=torch.float32, non_blocking=True)
+                    ts = theta_star_flat[i:j].to(device=device, dtype=torch.float32, non_blocking=True)
                     fd = fdiag_cpu[i:j].to(device=device, dtype=torch.float32, non_blocking=True)
                     th = theta_flat[i:j]
                     d = th - ts
