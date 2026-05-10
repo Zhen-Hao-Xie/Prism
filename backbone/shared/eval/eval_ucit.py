@@ -66,5 +66,25 @@ class VizcapEvaluator(CaptionEvaluator):
     name = "vizcap"
     help_text = "Evaluate VizWiz caption results using caption eval"
 
+
+class ChartQAEvaluator(DeepSeekR1Evaluator):
+    name = "chartqa"
+    help_text = "Evaluate ChartQA results using DeepSeek R1 script"
+
+
+class DocVQAEvaluator(DeepSeekR1Evaluator):
+    name = "docvqa"
+    help_text = "Evaluate DocVQA results using DeepSeek R1 script"
+
+
+class InfographicVQAEvaluator(DeepSeekR1Evaluator):
+    name = "infographicvqa"
+    help_text = "Evaluate InfographicVQA results using DeepSeek R1 script"
+
+
+class PMCVQAEvaluator(DeepSeekR1Evaluator):
+    name = "pmcvqa"
+    help_text = "Evaluate PMCVQA results using DeepSeek R1 script"
+
 # VizWiz already has an evaluator in eval_unified using m4c, but if we want to use the UCIT caption evaluator,
 # We can subclass it here or let the user decide.

@@ -456,7 +456,11 @@ EVAL_TASK_MAP = {
     "IconQA": "iconqa",
     "CLEVR": "clevr",
     "Flickr30k": "flickr30k",
-    "Vizcap": "vizcap"
+    "Vizcap": "vizcap",
+    "ChartQA": "chartqa",
+    "DocVQA": "docvqa",
+    "InfographicVQA": "infographicvqa",
+    "PMCVQA": "pmcvqa",
 }
 
 

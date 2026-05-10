@@ -1,31 +1,6 @@
 import argparse
-import os
-import sys
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List
-
-try:
-    from config.backbone.llava import DEFAULT_CONV_MODE
-except Exception:
-    DEFAULT_CONV_MODE = "vicuna_v1"
-
-
-def _eval_preload_llama_tokenizer_from_argv() -> None:
-    """Warm up LLaMA SPM tokenizer before importing torch (avoids sentencepiece races with inductor)."""
-    if os.environ.get("MCIT_SKIP_SPM_PRELOAD", "").strip() in ("1", "true", "yes"):
-        return
-    probe = argparse.ArgumentParser(add_help=False)
-    probe.add_argument("--model-base", type=str, default=None)
-    ns, _ = probe.parse_known_args(sys.argv[1:])
-    mb = ns.model_base
-    if not mb:
-        return
-    from transformers import AutoTokenizer
-
-    AutoTokenizer.from_pretrained(os.path.expanduser(mb), use_fast=False)
-
-
-_eval_preload_llama_tokenizer_from_argv()
 
 from backbone.shared.eval.inference_engine import InferenceEngine
 from backbone.shared.eval.task_adapters import DefaultTaskAdapter, ScienceQATaskAdapter
@@ -143,7 +118,7 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--image-folder", type=str, default="")
     parser.add_argument("--question-file", type=str, required=True)
     parser.add_argument("--answers-file", type=str, required=True)
-    parser.add_argument("--conv-mode", type=str, default=DEFAULT_CONV_MODE)
+    parser.add_argument("--conv-mode", type=str, default="llava_v1")
     parser.add_argument("--text-tower", type=str, default=None)
     parser.add_argument("--num-chunks", type=int, default=1)
     parser.add_argument("--chunk-idx", type=int, default=0)
@@ -153,25 +128,12 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-new-tokens",
                         dest="max_new_tokens", type=int, default=128)
     parser.add_argument(
-        "--method",
+        '--clmethod',
         type=str,
         default=None,
-        choices=[
-            "base",
-            "hide_llava",
-            "same",
-            "smolora",
-            "moelora",
-            "olora",
-            "replay_lora",
-            "ft_lora",
-            "ewc",
-            "zeroshot",
-            "clmoe",
-            "disco",
-            "modal_prompt",
-        ],
-        help="CL method (must match training checkpoint; same as common/load_model.load_model_for_inference)",
+        choices=['base', 'hide_llava', 'same', 'simple_prompt', 'smolora',
+                 'protoada', 'disco', 'clmoe', 'sefe', 'modal_prompt'],
+        help='持续学习方法（须与 checkpoint 训练时 method 一致；与 common/load_model.load_model_for_inference 对齐）',
     )
     parser.add_argument("--batch-size", type=int, default=1,
                         help="Batch size for inference")
@@ -179,14 +141,14 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         "--benchmark",
         type=str,
         default=None,
-        help="ucit / coin / … for CL task_num (same as run.py infer). Not needed for method=zeroshot.",
+        help="ucit / coin 等；用于与 checkpoint 对齐的 task_num（与 run.py infer 一致）",
     )
     parser.add_argument(
         "--task-num",
         dest="cl_task_num",
         type=int,
         default=None,
-        help="Explicit CL task_num (overrides --benchmark). Not needed for method=zeroshot.",
+        help="显式指定 CL 的 task_num；若设置则优先于 --benchmark 推导",
     )
 
 

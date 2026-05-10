@@ -828,6 +828,10 @@ def build_registry() -> EvaluatorRegistry:
         CLEVREvaluator,
         Flickr30kEvaluator,
         VizcapEvaluator,
+        ChartQAEvaluator,
+        DocVQAEvaluator,
+        InfographicVQAEvaluator,
+        PMCVQAEvaluator,
     )
     registry.register(ImageNetREvaluator())
     registry.register(ArxivQAEvaluator())
@@ -835,6 +839,10 @@ def build_registry() -> EvaluatorRegistry:
     registry.register(CLEVREvaluator())
     registry.register(Flickr30kEvaluator())
     registry.register(VizcapEvaluator())
+    registry.register(ChartQAEvaluator())
+    registry.register(DocVQAEvaluator())
+    registry.register(InfographicVQAEvaluator())
+    registry.register(PMCVQAEvaluator())
 
     return registry
 
