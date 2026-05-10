@@ -40,13 +40,29 @@ class InferenceEngine:
     def _load_model(self, args: Any) -> Tuple[Any, Any, Any, str]:
         from common.load_model import load_model_for_inference
 
-        model_path = os.path.expanduser(args.model_path)
-        model_name = getattr(args, "model_name",None) or get_model_name_from_path(model_path)
+        _m = str(getattr(args, "method", "") or "").strip().lower()
+        if _m == "zeroshot":
+            mb = getattr(args, "model_base", None)
+            if not mb:
+                raise ValueError(
+                    "method=zeroshot 需要 --model-base（LLaVA 权重）；不加载 CL adapter checkpoint，无需 --model-path。"
+                )
+            mp = os.path.expanduser(str(mb).strip())
+            if str(getattr(args, "model_path", "") or "").strip():
+                print(
+                    "[infer] method=zeroshot：忽略 --model-path，仅从 --model-base 加载纯 LLaVA。",
+                    flush=True,
+                )
+            model_name = getattr(args, "model_name", None) or get_model_name_from_path(mp)
+        else:
+            model_path = os.path.expanduser(args.model_path)
+            mp = model_path
+            model_name = getattr(args, "model_name", None) or get_model_name_from_path(model_path)
         tokenizer, model, image_processor, _ = load_model_for_inference(
-            model_path,
+            mp,
             args.model_base,
             model_name,
-            method=args.method, 
+            method=args.method,
             text_tower=getattr(args, "text_tower", None),
             benchmark=getattr(args, "benchmark", None),
             task_num=getattr(args, "cl_task_num", None),

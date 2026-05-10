@@ -1,7 +1,7 @@
 # method/base/integration.py
 """
 CL 方法与模型集成的统一接口
-每个方法 (SP, HiDe-LLaVA, RanPAC, SEFE) 都需要实现这个接口
+每个方法都需要实现这个接口
 """
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
@@ -76,27 +76,24 @@ class CLIntegration(ABC):
     ) -> Any:
         """
         Forward 结束后调用
-        - SEFE: 注入正则 Loss
         - RanPAC: 注入辅助 Loss
         - SP: 清理状态
         返回修改后的 outputs
         """
         pass
     
-    @abstractmethod
     def on_step_end(
-        self, 
-        model: nn.Module, 
+        self,
+        model: nn.Module,
         context: CLContext,
-        loss: Optional[torch.Tensor] = None
+        loss: Optional[torch.Tensor] = None,
     ) -> None:
         """
-        训练步结束后调用 (Trainer Callback)
-        - SP: 更新原型
-        - RanPAC: 更新 Gram 矩阵
-        - HiDe-LLaVA: 更新 Anchors
+        训练步结束后调用（``CLTrainerCallback``，在 backward 与优化器更新之后）。
+        - SP / RanPAC / HiDe 等：更新原型、Gram、Anchors…
+        - 依赖 ``on_training_batch_end`` 的逻辑无需在此重复实现。
         """
-        pass
+        return
     
     @abstractmethod
     def on_task_end(
@@ -162,3 +159,51 @@ class CLIntegration(ABC):
         默认实现，子类可重写
         """
         return base_loss + context.get_total_auxiliary_loss()
+
+    def prepare_training_data(self, data_args: Any, model_args: Any, training_args: Any = None) -> None:
+        """
+        在 ``make_supervised_data_module`` 之前调用，用于在不改训练脚本的前提下调整数据配置。
+
+        典型用途：经验回放将历史样本写入侧车 JSON 并设置 ``data_args.memory_data_path``（与
+        ``LazySupervisedDataset`` 已有逻辑对齐）；其它方法可忽略此钩子。
+
+        Args:
+            data_args: 训练数据参数（可原地修改）。
+            model_args: 模型/方法参数。
+            training_args: 训练参数（可选，用于 ``output_dir``、分布式 rank 等）。
+        """
+        return
+
+    def on_training_batch_end(
+        self,
+        model: nn.Module,
+        context: CLContext,
+        batch: Dict[str, Any],
+        *,
+        loss: Optional[torch.Tensor] = None,
+        trainer: Any = None,
+    ) -> None:
+        """
+        由 ``LLaVATrainer.training_step`` 在每次 micro-batch 的 backward 之后调用（含梯度累积）。
+        ``batch`` 与 ``compute_loss`` 收到的字典一致；若数据管线提供 ``cl_raw_example``（``list[dict]``），
+        则为与 ``LazySupervisedDataset`` JSON 对齐的原始样本，可供经验回放等写入缓冲区。
+
+        默认无操作；需在 backward 之后访问当前 ``batch`` 的方法应重写本方法。
+        """
+        return
+
+    def should_store_training_example(
+        self,
+        model: nn.Module,
+        context: CLContext,
+        raw_example: Dict[str, Any],
+        batch: Dict[str, Any],
+        *,
+        example_index: int,
+        loss: Optional[torch.Tensor] = None,
+    ) -> bool:
+        """
+        是否将 ``raw_example`` 写入某类训练期缓冲区（如经验回放）。供 ``on_training_batch_end`` 内循环调用，
+        便于子类按样本特征、``batch`` 张量、``loss`` 等自定义策略。默认 ``False``。
+        """
+        return False

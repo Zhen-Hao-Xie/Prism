@@ -1,11 +1,7 @@
-"""
-Defaults for method: simple_prompt
-"""
-
 from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
-    "--method": "simple_prompt",
+    "--method": "ewc",
     "--mm_projector_lr": "2e-5",
     "--num_train_epochs": "1",
     "--learning_rate": "2e-4",
@@ -22,8 +18,6 @@ INFER_DEFAULTS = {
     "batch_size": 12,
 }
 
-# Keys = task index in config/benchmarks/* (``run.py train <id>``). CoIN: 8 tasks, UCIT: 6 tasks.
-# 每个任务单独一行，便于按数据集改 batch。
 TRAIN_BATCH_SIZES = {
     "coin": {
         0: 12,
@@ -46,6 +40,20 @@ TRAIN_BATCH_SIZES = {
 }
 
 METHOD_CONFIG = {
-    "num_prompt_tokens": 256,
+    "lora_dropout": 0.05,
+    "peft_target_modules": "attn_and_ffn",
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
+    "ewc_lambda": 5000.0,
+    "ewc_fisher_batches": 50,
+}
+
+METHOD_CONFIG_BY_BENCHMARK = {
+    "coin": {
+        "lora_r": 64,
+        "lora_alpha": 128,
+    },
+    "ucit": {
+        "lora_r": 96,
+        "lora_alpha": 192,
+    },
 }

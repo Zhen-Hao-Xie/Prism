@@ -160,10 +160,12 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
             "base",
             "hide_llava",
             "same",
-            "simple_prompt",
             "smolora",
             "moelora",
-            "sefe",
+            "olora",
+            "replay_lora",
+            "ft_lora",
+            "ewc",
             "zeroshot",
         ],
         help="持续学习方法（须与 checkpoint 训练时 method 一致；与 common/load_model.load_model_for_inference 对齐）",
@@ -174,14 +176,14 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         "--benchmark",
         type=str,
         default=None,
-        help="ucit / coin 等；用于与 checkpoint 对齐的 task_num（与 run.py infer 一致）",
+        help="ucit / coin 等；用于推导 CL 的 task_num（与 run.py infer 一致）。method=zeroshot 时不需要",
     )
     parser.add_argument(
         "--task-num",
         dest="cl_task_num",
         type=int,
         default=None,
-        help="显式指定 CL 的 task_num；若设置则优先于 --benchmark 推导",
+        help="显式指定 CL 的 task_num；若设置则优先于 --benchmark 推导。method=zeroshot 时不需要",
     )
 
 

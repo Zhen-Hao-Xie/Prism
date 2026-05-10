@@ -50,9 +50,8 @@ from .tuners import (
     HiDeMOELoraModel,
     SAMEModel,
     MoELoRAModel,
+    OLoRAModel,
     SMoLoraModel,
-    SimplePromptConfig,
-    SimplePromptModel,
 )
 from .utils import (
     SAFETENSORS_WEIGHTS_NAME,
@@ -84,7 +83,7 @@ PEFT_TYPE_TO_MODEL_MAPPING = {
     PeftType.MOE_LORA_HiDe: HiDeMOELoraModel,
     PeftType.MOE_LORA_SAME: SAMEModel,
     PeftType.MOE_LORA_MOELORA: MoELoRAModel,
-    PeftType.SIMPLE_PROMPT: SimplePromptModel,
+    PeftType.MOE_LORA_OLORA: OLoRAModel,
     PeftType.SMOLORA: SMoLoraModel,
 }
 
@@ -1032,41 +1031,6 @@ class PeftModelForCausalLM(PeftModel):
                     prompts = prompts.to(inputs_embeds.dtype)
                     model_kwargs["inputs_embeds"] = torch.cat((prompts, inputs_embeds), dim=1)
                     model_kwargs["input_ids"] = None
-
-        return model_kwargs
-
-
-class PeftModelForCausalLMSimplePrompt(PeftModelForCausalLM):
-    """Causal LM PEFT wrapper that prepends soft prompts during `generate` (first step only)."""
-
-    def prepare_inputs_for_generation(self, *args, **kwargs):
-        model_kwargs = self.base_model_prepare_inputs_for_generation(*args, **kwargs)
-        cfg = self.active_peft_config
-        if not isinstance(cfg, SimplePromptConfig):
-            return model_kwargs
-
-        if model_kwargs.get("past_key_values") is not None:
-            return model_kwargs
-
-        if model_kwargs.get("input_ids") is None:
-            return model_kwargs
-
-        input_ids = model_kwargs["input_ids"]
-        b = input_ids.shape[0]
-        base = self.base_model
-        emb = base.model.get_input_embeddings()(input_ids)
-        prompts = base._prompt_batch(b, input_ids.device, emb.dtype)
-        model_kwargs["inputs_embeds"] = torch.cat([prompts, emb], dim=1)
-        model_kwargs["input_ids"] = None
-
-        if model_kwargs.get("attention_mask") is not None:
-            am = model_kwargs["attention_mask"]
-            prefix = torch.ones(b, int(cfg.num_prompt_tokens), device=am.device, dtype=am.dtype)
-            model_kwargs["attention_mask"] = torch.cat([prefix, am], dim=1)
-
-        if model_kwargs.get("position_ids", None) is not None:
-            warnings.warn("[SimplePrompt] position_ids not supported during generation prep; dropping.")
-            model_kwargs["position_ids"] = None
 
         return model_kwargs
 

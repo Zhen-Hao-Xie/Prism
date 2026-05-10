@@ -87,6 +87,9 @@ class LazySupervisedDataset(Dataset):
             crop_size = self.data_args.image_processor.crop_size
             data_dict["image"] = torch.zeros(3, crop_size["height"], crop_size["width"])
 
+        # 与当条训练数据同内容的 JSON 副本，仅供 CL 在 backward 之后写 buffer；本条仍参与本步 loss（见 tensor 字段）。
+        data_dict["cl_raw_example"] = copy.deepcopy(self.list_data_dict[i])
+
         return data_dict
 
 
@@ -117,6 +120,9 @@ class DataCollatorForSupervisedDataset:
                 batch["images"] = torch.stack(images)
             else:
                 batch["images"] = images
+
+        if instances and "cl_raw_example" in instances[0]:
+            batch["cl_raw_example"] = [instance.get("cl_raw_example") for instance in instances]
 
         return batch
 

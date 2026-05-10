@@ -55,8 +55,16 @@ def train():
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
 
-    trainer = LLaVATrainer(model=model,tokenizer=tokenizer,args=training_args,**data_module)
-    trainer.add_callback(CLTrainerCallback(model_args, model))
+    # CL 的 ``on_training_batch_end`` 等在 ``LLaVATrainer.training_step`` 中派发（见该方法）。
+    cl_cb = CLTrainerCallback(model_args, model)
+    trainer = LLaVATrainer(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        callbacks=[cl_cb],
+        **data_module,
+    )
+    cl_cb.trainer = trainer
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         rank0_print(f"Resuming from checkpoint in {training_args.output_dir}")
         trainer.train(resume_from_checkpoint=True)

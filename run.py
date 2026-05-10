@@ -660,6 +660,11 @@ def _infer_y_label(model_path: str, checkpoint_task: str) -> str:
 
 
 def cmd_train(args: argparse.Namespace) -> int:
+    if str(getattr(args, "method", "") or "").strip().lower() == "zeroshot":
+        raise SystemExit(
+            "method 'zeroshot' is inference-only (plain LLaVA baseline, no CL training). "
+            "Use infer/eval with --method zeroshot, or choose another --method for train."
+        )
     # benchmark configs are imported in *this* process
     env = _build_env()
     # Default logging level for subprocesses
@@ -782,7 +787,11 @@ def cmd_infer(args: argparse.Namespace) -> int:
         infer_bs = method_cfg.get("INFER_DEFAULTS", {}).get("batch_size", 1)
     infer_bs = int(infer_bs)
 
-    if args.model_path:
+    if str(getattr(args, "method", "") or "").strip().lower() == "zeroshot":
+        # 纯基线：不从 checkpoints/<method>/Task*_llava 解析路径；权重仅来自配置里的 BASE_MODEL_PATH（子进程 --model-base）
+        model_path = ""
+        checkpoint_task = args.checkpoint_task
+    elif args.model_path:
         model_path = args.model_path
         checkpoint_task = args.checkpoint_task
     else:
@@ -793,6 +802,12 @@ def cmd_infer(args: argparse.Namespace) -> int:
 
     y = _infer_y_label(args.model_path, checkpoint_task)
     failed: list[int] = []
+
+    _infer_display_model = (
+        str(paths["BASE_MODEL_PATH"])
+        if str(getattr(args, "method", "") or "").strip().lower() == "zeroshot"
+        else model_path
+    )
 
     gpus = [int(x.strip()) for x in args.gpus.split(",") if x.strip() != ""]
     if not gpus:
@@ -853,7 +868,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
 
         _ensure_parent(log_path)
         with open(log_path, "w", encoding="utf-8") as f:
-            f.write(f"MODEL: {model_path}\n")
+            f.write(f"MODEL: {_infer_display_model}\n")
             f.write(f"BENCHMARK: {args.benchmark}\n")
             f.write(f"TASK: {task_id}\n")
             f.write(f"GPUS: {args.gpus}\n")
@@ -871,7 +886,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
                 mirror=mirror,
                 lock=log_lock,
             )
-            _log_line(f"model: {model_path}", log_file=log_path, mirror=mirror, lock=log_lock)
+            _log_line(f"model: {_infer_display_model}", log_file=log_path, mirror=mirror, lock=log_lock)
             _log_line(f"log: {log_path}", log_file=log_path, mirror=mirror, lock=log_lock)
             _log_line("=" * 60, log_file=log_path, mirror=mirror, lock=log_lock)
 

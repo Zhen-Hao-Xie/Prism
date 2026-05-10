@@ -68,7 +68,7 @@ METHOD_CONFIG = {
 # 按 benchmark 覆盖 METHOD_CONFIG 同名字段（推理 merge、与 train 对齐）
 METHOD_CONFIG_BY_BENCHMARK = {
     "ucit": {
-        "lora_r": 48,
-        "lora_alpha": 96,
+        "lora_r": 96,
+        "lora_alpha": 192,
     },
 }

@@ -36,8 +36,8 @@ def get_peft_model_state_dict(model, state_dict=None, adapter_name="default"):
         PeftType.MOE_LORA_HiDe,
         PeftType.MOE_LORA_SAME,
         PeftType.MOE_LORA_MOELORA,
+        PeftType.MOE_LORA_OLORA,
         PeftType.SMOLORA,
-        PeftType.SEFE,
     ):
         # to_return = lora_state_dict(model, bias=model.peft_config.bias)
         # adapted from `https://github.com/microsoft/LoRA/blob/main/loralib/utils.py`
@@ -76,9 +76,6 @@ def get_peft_model_state_dict(model, state_dict=None, adapter_name="default"):
         to_return["prompt_embeddings"] = prompt_embeddings
     elif config.peft_type == PeftType.IA3:
         to_return = {k: state_dict[k] for k in state_dict if "ia3_" in k}
-    elif config.peft_type == PeftType.SIMPLE_PROMPT:
-        # Per-task soft prompts live under SimplePromptModel.task_prompts.* (all slots, trainable or frozen).
-        to_return = {k: state_dict[k] for k in state_dict if "task_prompts" in k}
     else:
         raise NotImplementedError
     if model.modules_to_save is not None:
@@ -118,8 +115,8 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         PeftType.MOE_LORA_HiDe,
         PeftType.MOE_LORA_SAME,
         PeftType.MOE_LORA_MOELORA,
+        PeftType.MOE_LORA_OLORA,
         PeftType.SMOLORA,
-        PeftType.SEFE,
     ):
         peft_model_state_dict = {}
         parameter_prefix = "ia3_" if config.peft_type == PeftType.IA3 else "lora_"
@@ -139,8 +136,6 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
             if rank_pattern is not None:
                 model.resize_modules_by_rank_pattern(rank_pattern, adapter_name)
     elif isinstance(config, PromptLearningConfig) or config.peft_type == PeftType.ADAPTION_PROMPT:
-        peft_model_state_dict = state_dict
-    elif config.peft_type == PeftType.SIMPLE_PROMPT:
         peft_model_state_dict = state_dict
     else:
         raise NotImplementedError

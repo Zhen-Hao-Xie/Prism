@@ -8,13 +8,13 @@ def merge_method_config_into(obj: Any, method: Optional[str] = None, benchmark: 
     将 `config/methods/<method>.py` 里的 `METHOD_CONFIG` 写入 obj：
     - 若存在 ``METHOD_CONFIG_BY_BENCHMARK``，则先合并基准配置，再用 ``benchmark`` 对应子表覆盖同名字段（如不同 bench 的 lora_r）。
     - 仅当 obj 上不存在该属性，或当前值为 None 时写入（命令行 / 训练脚本显式传入优先）。
-    这样方法专属字段（如 simple_prompt 的 num_prompt_tokens）不必出现在共享的 ModelArguments 里。
+    这样方法专属字段不必出现在共享的 ModelArguments 里。
     注意：`task_num` / `expert_num` 由 benchmark 决定，见 `merge_benchmark_task_num_into`，此处不再从 METHOD_CONFIG 合并。
 
     ``benchmark`` 未传时使用 ``getattr(obj, "benchmark", None)``。
     """
     m = (method or getattr(obj, "method", None) or "").strip().lower()
-    if not m or m == "base":
+    if not m or m == "base" or m == "zeroshot":
         return
     try:
         mod = __import__(f"config.methods.{m}", fromlist=["METHOD_CONFIG"])
@@ -92,7 +92,7 @@ class ModelArguments:
     )
     method: str = field(
         default="hide_llava",
-        metadata={"help": "CL method: hide_llava / same / simple_prompt / smolora 等"},
+        metadata={"help": "CL method: hide_llava / same / olora / replay_lora / ft_lora / ewc 等"},
     )
     exclude_module_path_segments: Optional[Any] = field(
         default=None,

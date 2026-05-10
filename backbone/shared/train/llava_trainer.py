@@ -10,7 +10,7 @@ from transformers.trainer import (
     ShardedDDPOption,
     logger,
 )
-from typing import Optional
+from typing import Any, Dict, Optional
 
 # 从 common 导入已解耦的功能
 from common.save_checkpoint import get_mm_adapter_state_maybe_zero_3
@@ -18,6 +18,33 @@ from backbone.shared.data import LengthGroupedSampler
 
 
 class LLaVATrainer(Trainer):
+
+    def training_step(self, model: nn.Module, inputs: Dict[str, Any]) -> torch.Tensor:
+        """在 backward 之后调用 ``CLIntegration.on_training_batch_end``（含梯度累积下每个 micro-batch）。"""
+        loss = super().training_step(model, inputs)
+        self._dispatch_cl_on_training_batch_end(model, inputs, loss)
+        return loss
+
+    def _dispatch_cl_on_training_batch_end(
+        self, model: nn.Module, inputs: Dict[str, Any], loss: torch.Tensor
+    ) -> None:
+        try:
+            from accelerate.utils import unwrap_model
+
+            core = unwrap_model(model)
+        except Exception:
+            core = model
+            if hasattr(core, "module"):
+                core = core.module
+        if not hasattr(core, "_integration") or core._integration is None:
+            return
+        hook = getattr(core._integration, "on_training_batch_end", None)
+        if not callable(hook):
+            return
+        ctx = getattr(core, "_cl_context", None)
+        if ctx is None:
+            return
+        hook(core, ctx, inputs, loss=loss, trainer=self)
 
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.train_dataset is None or not has_length(self.train_dataset):

@@ -190,6 +190,11 @@ def _manual_load_lora(lora_target, checkpoint_path):
 # common/load_model.py
 def load_model_for_train(model_args, data_args, training_args):
     """加载用于训练的模型"""
+    if str(getattr(model_args, "method", "") or "").strip().lower() == "zeroshot":
+        raise ValueError(
+            "method='zeroshot' is inference-only (no continual learning training). "
+            "Use eval/infer with --method zeroshot, or set method to a CL method for train."
+        )
     merge_method_config_into(model_args)
     merge_benchmark_task_num_into(model_args)
     # LoRA 数值：METHOD_CONFIG / METHOD_CONFIG_BY_BENCHMARK 合入 model_args 后写回 training_args（单一数据源）；
@@ -296,7 +301,10 @@ def load_model_for_train(model_args, data_args, training_args):
                         print("Method extra state not found or failed to load (continuing training)")
     else:
         assert(0)
-    # =======================================================
+    if hasattr(model, "_integration"):
+        _prep = getattr(model._integration, "prepare_training_data", None)
+        if callable(_prep):
+            _prep(data_args, model_args, training_args)
 
     model = model.cuda()
     model.train()
@@ -400,6 +408,15 @@ def load_model_for_inference(
         kwargs['torch_dtype'] = torch.float16
 
     if 'llava' in model_name.lower():
+        _zs = str(method or "").strip().lower() == "zeroshot"
+        if _zs:
+            if not model_base:
+                raise ValueError(
+                    "method=zeroshot 需要 ``model_base``（LLaVA 权重目录）；不加载 CL checkpoint / adapter。"
+                )
+            model_path = os.path.expanduser(str(model_base).strip())
+            print("Inference: zeroshot — using model_base weights only (no CL checkpoint).", flush=True)
+
         use_peft_adapter_layout = model_base is not None and (
             _checkpoint_dir_has_peft_adapter(model_path)
             or "lora" in model_name.lower()
@@ -468,7 +485,8 @@ def load_model_for_inference(
                     )
                     merge_method_config_into(pseudo_args, method=method)
                     merge_benchmark_task_num_into(pseudo_args, benchmark=benchmark)
-                    if getattr(pseudo_args, "task_num", None) is None:
+                    _is_zeroshot = str(method or "").strip().lower() == "zeroshot"
+                    if getattr(pseudo_args, "task_num", None) is None and not _is_zeroshot:
                         raise ValueError(
                             "CL inference requires task_num: pass benchmark (e.g. run.py infer sets --benchmark) "
                             "or set task_num explicitly in load_model_for_inference(..., task_num=..., benchmark=...)."
@@ -543,9 +561,11 @@ def load_model_for_inference(
                     f"Warning: no mm_projector.bin under {model_path}; "
                     "multimodal projector may match base only."
                 )
+            model.set_tokenizer(tokenizer)
         else:
             tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
             model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
+            model.set_tokenizer(tokenizer)
         
         # 加载 vision tower 和 text tower
         vision_tower = model.get_vision_tower()

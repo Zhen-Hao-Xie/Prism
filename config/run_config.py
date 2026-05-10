@@ -13,8 +13,8 @@ TRAIN_DEFAULTS = {
     "port": 29602,
     # True → training subprocess gets PYMCIT_LOG_LEVEL=DEBUG (see run.py / train.py). Does not change batch size.
     "debug": False,
-    # same, hide_llava, simple_prompt, ...
-    "method": "hide_llava",
+    # hide_llava, olora, replay_lora, ...
+    "method": "olora",
     # UCIT：True 时在 train/test/eval 的 *.json 路径上自动加 _sub（config/benchmarks/UCIT.py 中写规范名即可）
     "use_sub_dataset": True,
 }
@@ -30,7 +30,7 @@ INFER_DEFAULTS = {
     "checkpoint_task": "5",
     "checkpoint_suffix": "_llava",
     "stage": "last",
-    "method": "hide_llava",
+    "method": "zeroshot",
     "temperature": "0",
     "use_sub_dataset": True,
 }

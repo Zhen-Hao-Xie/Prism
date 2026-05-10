@@ -257,7 +257,8 @@ class CLModel(nn.Module):
                 past_key_values, labels, images, kwargs.get('image_sizes')
             )
         
-        # 调用 base_model 的 forward
+        # 调用 base_model 的 forward（训练 batch 可能含 ``cl_raw_example``，仅用于 CL 钩子，不得传入 LM）
+        _base_kwargs = {k: v for k, v in kwargs.items() if k != "cl_raw_example"}
         _base_model = object.__getattribute__(self, '_base_model')
         outputs = _base_model.forward(
             input_ids=input_ids,
@@ -270,7 +271,7 @@ class CLModel(nn.Module):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
-            **kwargs,
+            **_base_kwargs,
         )
         
         # CL 逻辑：Forward 结束

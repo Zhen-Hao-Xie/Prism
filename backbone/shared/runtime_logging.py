@@ -49,7 +49,7 @@ def configure_pymcit_logging_from_env(default_when_unset: str = "TRAIN") -> str:
 
     Training / HF often install handlers before this runs (e.g. at INFO). For ``DEBUG`` we
     lower existing handlers and strip ``_ProjectLevelFilter`` so ``logging.getLogger(...).debug``
-    (e.g. ``method.custom.simple_prompt.integration``) actually reaches stderr / tee logs.
+    (e.g. custom ``method.custom.*.integration``) actually reaches stderr / tee logs.
     """
     level = str(os.environ.get("PYMCIT_LOG_LEVEL", default_when_unset)).strip().upper()
     os.environ["PYMCIT_LOG_LEVEL"] = level
