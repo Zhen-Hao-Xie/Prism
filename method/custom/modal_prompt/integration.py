@@ -7,7 +7,6 @@ Inference: selects top-K prompts via modal guidance and prepends them.
 """
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -22,7 +21,6 @@ from method.base.peft_extension import register_peft_extension
 from method.factory import CLMethodFactory
 
 _PEFT_EXT_REGISTERED = False
-_LOG = logging.getLogger(__name__)
 
 
 def ensure_peft_extension_registered() -> None:
@@ -265,20 +263,6 @@ class Modal_promptIntegration(CLIntegration):
         # After PEFT setup, sync trainability
         self._sync_trainability(model)
 
-        mpm = self._find_modal_prompt_model(model)
-        if mpm is not None:
-            n_train_prompts = sum(1 for p in mpm.task_prompts if p.requires_grad)
-            n_train_trans = sum(
-                1 for t in mpm.prompt_transforms for p in t.parameters() if p.requires_grad
-            )
-            print(
-                f"[modal_prompt] Training: cur_task={self.cur_task}, "
-                f"prefix_len={self.prefix_len}, "
-                f"trainable prompt slots={n_train_prompts}, "
-                f"trainable transform params={n_train_trans}",
-                flush=True,
-            )
-
     def _setup_modal_prompt_peft(self, model) -> None:
         ensure_peft_extension_registered()
         from PEFT import get_peft_model
@@ -347,26 +331,11 @@ class Modal_promptIntegration(CLIntegration):
 
     def on_forward_end(self, model, outputs: Any, context: CLContext) -> Any:
         if hasattr(outputs, "loss") and outputs.loss is not None:
-            lm_loss = outputs.loss.detach().item()
-            img_loss = self._image_cos_sim_loss if self._image_cos_sim_loss is not None else torch.tensor(0.0, device=outputs.loss.device)
-            txt_loss = self._text_cos_sim_loss if self._text_cos_sim_loss is not None else torch.tensor(0.0, device=outputs.loss.device)
-            outputs.loss = outputs.loss
-
-            if self.cur_task < 2:  # Log per-component losses for first few tasks
-                print(
-                    f"[modal_prompt] task={self.cur_task} "
-                    f"lm_loss={lm_loss:.4f} "
-                    f"img_cos_loss={img_loss.item():.4f} "
-                    f"txt_cos_loss={txt_loss.item():.4f} "
-                    f"total_loss={outputs.loss.detach().item():.4f}",
-                    flush=True,
-                )
             self._image_cos_sim_loss = None
             self._text_cos_sim_loss = None
         return outputs
 
     def on_task_end(self, model, context: CLContext, task_id: int) -> None:
-        print(f"[modal_prompt] Finished training for task {task_id}")
         self.cur_task = int(task_id) + 1
 
     def pre_generate_hook(self, model, input_ids, images, context: CLContext) -> bool:
@@ -391,10 +360,6 @@ class Modal_promptIntegration(CLIntegration):
             model, images, input_ids, clip_tokenizer, text_tower
         )
         self._select_prompts(mpm, image_feat, text_feat, training=False)
-        print(
-            f"[modal_prompt] route_infer: selected_prompts={mpm.selected_prompt_indices}",
-            flush=True,
-        )
         self.cur_task = saved_cur
         return True
 
@@ -429,8 +394,6 @@ class Modal_promptIntegration(CLIntegration):
                 {k: v.detach().cpu().clone() for k, v in t.state_dict().items()}
                 for t in mpm.prompt_transforms
             ]
-        else:
-            _LOG.debug("save_extra_state: ModalPromptModel not found")
 
         torch.save(state, os.path.join(output_dir, "modal_prompt_state.pt"))
         return True
@@ -451,7 +414,7 @@ class Modal_promptIntegration(CLIntegration):
         if model is not None:
             mpm = self._find_modal_prompt_model(model)
             if mpm is None:
-                _LOG.debug("load_extra_state: ModalPromptModel not found on model")
+                pass
             else:
                 if "task_prompts" in state:
                     blobs = state["task_prompts"]
@@ -461,10 +424,6 @@ class Modal_promptIntegration(CLIntegration):
                         if not isinstance(t, torch.Tensor):
                             continue
                         if t.shape != mpm.task_prompts[i].shape:
-                            _LOG.warning(
-                                "load_extra_state: task_prompts[%d] shape mismatch ckpt=%s model=%s",
-                                i, tuple(t.shape), tuple(mpm.task_prompts[i].shape),
-                            )
                             continue
                         mpm.task_prompts[i].data.copy_(
                             t.to(device=mpm.task_prompts[i].device, dtype=mpm.task_prompts[i].dtype)

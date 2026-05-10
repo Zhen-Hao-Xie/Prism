@@ -45,12 +45,12 @@ class InferenceEngine:
             mb = getattr(args, "model_base", None)
             if not mb:
                 raise ValueError(
-                    "method=zeroshot 需要 --model-base（LLaVA 权重）；不加载 CL adapter checkpoint，无需 --model-path。"
+                    "method=zeroshot requires --model-base (LLaVA weights); no CL adapter is loaded (--model-path ignored)."
                 )
             mp = os.path.expanduser(str(mb).strip())
             if str(getattr(args, "model_path", "") or "").strip():
                 print(
-                    "[infer] method=zeroshot：忽略 --model-path，仅从 --model-base 加载纯 LLaVA。",
+                    "[infer] method=zeroshot: ignoring --model-path; loading LLaVA from --model-base only.",
                     flush=True,
                 )
             model_name = getattr(args, "model_name", None) or get_model_name_from_path(mp)
@@ -138,7 +138,7 @@ def default_generate(model: Any, input_ids: torch.Tensor, images: Optional[torch
 
     with torch.inference_mode():
         return model.generate(
-            input_ids=input_ids,  # 使用关键字参数
+            input_ids=input_ids,
             images=images,
             **generate_kwargs,
         )

@@ -1,27 +1,17 @@
-"""
-EWC：在 LLM 的 attention + FFN 上注入标准 LoRA；学习任务 t 结束后估计对角 Fisher（仅 LoRA），
-保存该任务的参数快照 θ*；任务 t+1 起在 CE 损失上增加 (λ/2) Σ F_i (θ_i - θ*_i)²（对所有已完成任务求和）。
-
-参见仓库根目录 ``ewc.md``。
-"""
-
 from __future__ import annotations
 
 import contextlib
 import gc
-import logging
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 
-from config.backbones.constants import IGNORE_INDEX
+from config.backbone.constants import IGNORE_INDEX
 from backbone.shared.peft_llm_targets import collect_peft_target_linear_suffixes
 from method.base.context import CLContext
 from method.base.integration import CLIntegration
 from method.factory import CLMethodFactory
-
-_LOG = logging.getLogger(__name__)
 
 
 def _infer_batch_size(batch: Dict[str, Any]) -> int:
@@ -64,7 +54,6 @@ def _masked_label_count(labels: torch.Tensor) -> torch.Tensor:
 
 
 def _fisher_chunk_loss_scale(batch_full: Dict[str, Any], chunk: Dict[str, Any], *, device: torch.device) -> torch.Tensor:
-    """将子 batch 上 HF 返回的 mean(loss) 换算成对「整 batch 标量 loss」的贡献：scale = T_chunk / T_full。"""
     lf = batch_full.get("labels")
     lc = chunk.get("labels")
     if isinstance(lf, torch.Tensor) and isinstance(lc, torch.Tensor):
@@ -77,7 +66,6 @@ def _fisher_chunk_loss_scale(batch_full: Dict[str, Any], chunk: Dict[str, Any], 
 
 
 def _reset_deepspeed_manual_gas_boundary(engine: Any) -> None:
-    """取消手动梯度累积边界，恢复 DeepSpeed 内部根据 micro-step 的默认判定。"""
     engine._is_gradient_accumulation_boundary = None
 
 
@@ -85,7 +73,6 @@ def _fisher_one_backward(
     trainer: Any,
     loss: torch.Tensor,
 ) -> None:
-    """与 Trainer 一致地走 backward（DeepSpeed 必须用 ``engine.backward``，否则会触发 ZeRO 错误）。"""
     ds = getattr(trainer, "deepspeed", None)
     if ds is not None:
         ds.backward(loss, scale_wrt_gas=False)
@@ -103,7 +90,6 @@ def _fisher_forward_backward_batch(
     full_batch: Dict[str, Any],
     chunks: List[Dict[str, Any]],
 ) -> bool:
-    """按 chunk 做 forward/backward；成功返回 True。DeepSpeed+ZeRO 下多段 backward 须配合梯度累积边界。"""
     ds = getattr(trainer, "deepspeed", None)
 
     if len(chunks) == 1:
@@ -150,7 +136,6 @@ def _fisher_forward_backward_batch(
 
 
 def _unwrap_peft_root(model: nn.Module) -> nn.Module:
-    """CLModel → PeftModel / 内层 LLaVA。"""
     inner = getattr(model, "_base_model", model)
     return inner
 
@@ -171,7 +156,6 @@ class EwcIntegration(CLIntegration):
         self.cur_task: int = int(getattr(config, "cur_task", 0))
         self.ewc_lambda: float = float(getattr(config, "ewc_lambda", 5000.0))
         self.ewc_fisher_batches: int = int(getattr(config, "ewc_fisher_batches", 50))
-        # None：不拆 micro-batch（与旧行为一致）；建议 1～4 以降低任务结束时 Fisher 反向的峰值显存
         self.ewc_fisher_micro_batch_size: Optional[int] = getattr(
             config, "ewc_fisher_micro_batch_size", None
         )
@@ -181,17 +165,15 @@ class EwcIntegration(CLIntegration):
         # task_id -> { full_param_name -> tensor CPU }
         self._anchors: Dict[int, Dict[str, torch.Tensor]] = {}
         self._fisher: Dict[int, Dict[str, torch.Tensor]] = {}
+        self._ewc_skip_penalty_for_fisher: bool = False
+        # Chunked penalty on GPU to avoid full-vector temporaries (OOM on large LoRA banks).
+        _ch = getattr(config, "ewc_penalty_chunk_elements", 262144)
+        self._ewc_penalty_chunk_elements: int = int(_ch) if _ch else 262144
 
     def initialize_model(self, model: nn.Module) -> None:
         for _, p in model.named_parameters():
             p.requires_grad = False
         self._setup_lora(model)
-        _LOG.info(
-            "[EWC] LoRA injected | λ=%s | Fisher batches/task_end=%s | Fisher micro-batch=%s",
-            self.ewc_lambda,
-            self.ewc_fisher_batches,
-            self.ewc_fisher_micro_batch_size,
-        )
 
     def _find_target_modules(self, model: nn.Module) -> List[str]:
         return collect_peft_target_linear_suffixes(model, self.config)
@@ -225,7 +207,6 @@ class EwcIntegration(CLIntegration):
         for name, p in _iter_lora_named_parameters(model):
             snap[name] = p.detach().float().cpu().clone()
         self._anchors[int(task_id)] = snap
-        _LOG.info("[EWC] saved θ* anchors for task %s (%d tensors)", task_id, len(snap))
 
     def _estimate_fisher_diagonal(
         self, model: nn.Module, trainer: Any, task_id: int
@@ -234,71 +215,67 @@ class EwcIntegration(CLIntegration):
         loader = trainer.get_train_dataloader()
         accum: Dict[str, torch.Tensor] = {}
         count = 0
+        micro_bs = self.ewc_fisher_micro_batch_size
 
         was_training = model.training
         model.eval()
 
-        if torch.cuda.is_available():
-            gc.collect()
-            torch.cuda.empty_cache()
-
-        micro_bs = self.ewc_fisher_micro_batch_size
-        if micro_bs is not None and micro_bs > 0:
-            _LOG.info(
-                "[EWC] Fisher diagonal: micro-batch=%s (train batch size does not apply here — "
-                "OOM at task end is often this pass; lower micro-batch if needed)",
-                micro_bs,
-            )
-
-        for name, p in _iter_lora_named_parameters(model):
-            accum[name] = torch.zeros(p.numel(), dtype=torch.float32)
-
-        it = iter(loader)
-        for _ in range(n_batches):
-            try:
-                batch = next(it)
-            except StopIteration:
-                break
-            batch = trainer._prepare_inputs(batch)
-
-            chunks = (
-                _microbatch_chunks(batch, micro_bs)
-                if micro_bs is not None and micro_bs > 0
-                else [batch]
-            )
-
-            if getattr(trainer, "deepspeed", None) is not None:
-                trainer.deepspeed.zero_grad()
-            else:
-                model.zero_grad(set_to_none=True)
-
-            with torch.enable_grad():
-                ok = _fisher_forward_backward_batch(model, trainer, batch, chunks)
-                if not ok:
-                    continue
+        self._ewc_skip_penalty_for_fisher = True
+        try:
+            if torch.cuda.is_available():
+                gc.collect()
+                torch.cuda.empty_cache()
 
             for name, p in _iter_lora_named_parameters(model):
-                if p.grad is None:
-                    continue
-                g = p.grad.detach().float().cpu().view(-1)
-                accum[name] += g.pow(2)
+                accum[name] = torch.zeros(p.numel(), dtype=torch.float32)
 
-            if getattr(trainer, "deepspeed", None) is not None:
-                trainer.deepspeed.zero_grad()
+            it = iter(loader)
+            for _ in range(n_batches):
+                try:
+                    batch = next(it)
+                except StopIteration:
+                    break
+                batch = trainer._prepare_inputs(batch)
+
+                chunks = (
+                    _microbatch_chunks(batch, micro_bs)
+                    if micro_bs is not None and micro_bs > 0
+                    else [batch]
+                )
+
+                if getattr(trainer, "deepspeed", None) is not None:
+                    trainer.deepspeed.zero_grad()
+                else:
+                    model.zero_grad(set_to_none=True)
+
+                with torch.enable_grad():
+                    ok = _fisher_forward_backward_batch(model, trainer, batch, chunks)
+                    if not ok:
+                        continue
+
+                for name, p in _iter_lora_named_parameters(model):
+                    if p.grad is None:
+                        continue
+                    g = p.grad.detach().float().cpu().view(-1)
+                    accum[name] += g.pow(2)
+
+                if getattr(trainer, "deepspeed", None) is not None:
+                    trainer.deepspeed.zero_grad()
+                else:
+                    model.zero_grad(set_to_none=True)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                count += 1
+
+            if count == 0:
+                self._fisher[int(task_id)] = {k: torch.zeros_like(v) for k, v in accum.items()}
             else:
-                model.zero_grad(set_to_none=True)
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            count += 1
+                for name in accum:
+                    accum[name] /= float(count)
+                self._fisher[int(task_id)] = accum
 
-        if count == 0:
-            _LOG.warning("[EWC] Fisher: no batch succeeded for task %s; Fisher left empty", task_id)
-            self._fisher[int(task_id)] = {k: torch.zeros_like(v) for k, v in accum.items()}
-        else:
-            for name in accum:
-                accum[name] /= float(count)
-            self._fisher[int(task_id)] = accum
-            _LOG.info("[EWC] Fisher diagonal estimated for task %s (%d batches)", task_id, count)
+        finally:
+            self._ewc_skip_penalty_for_fisher = False
 
         if was_training:
             model.train()
@@ -311,16 +288,11 @@ class EwcIntegration(CLIntegration):
         *,
         trainer: Optional[Any] = None,
     ) -> None:
-        """单个任务训练跑完时调用：先存 θ*，再在一部分 batch 上估计 Fisher（见 ``ewc.md``）。"""
         tid = int(task_id)
         self._snapshot_anchors(model, tid)
         if trainer is not None:
             self._estimate_fisher_diagonal(model, trainer, tid)
         else:
-            _LOG.warning(
-                "[EWC] trainer ref missing; Fisher not computed (anchors still saved). "
-                "Ensure CLTrainerCallback.trainer is set in train.py."
-            )
             self._fisher[tid] = {
                 n: torch.zeros(p.numel(), dtype=torch.float32)
                 for n, p in _iter_lora_named_parameters(model)
@@ -328,6 +300,7 @@ class EwcIntegration(CLIntegration):
 
     def _ewc_penalty(self, model: nn.Module, cur_task: int) -> torch.Tensor:
         device = next(model.parameters()).device
+        chunk = max(4096, self._ewc_penalty_chunk_elements)
         total = torch.zeros((), device=device, dtype=torch.float32)
         ct = int(cur_task)
 
@@ -341,11 +314,23 @@ class EwcIntegration(CLIntegration):
             for name, p in _iter_lora_named_parameters(model):
                 if name not in anchors or name not in fisher:
                     continue
-                theta_star = anchors[name].to(device=p.device, dtype=torch.float32).reshape(-1)
-                fdiag = fisher[name].to(device=p.device, dtype=torch.float32)
-                theta = p.reshape(-1).float()
-                diff = theta - theta_star
-                total = total + (fdiag * diff * diff).sum()
+                theta_star_cpu = anchors[name]
+                fdiag_cpu = fisher[name]
+                if theta_star_cpu.numel() != fdiag_cpu.numel():
+                    continue
+                theta_flat = p.reshape(-1).float()
+                n = theta_flat.numel()
+                if theta_star_cpu.numel() != n:
+                    continue
+                i = 0
+                while i < n:
+                    j = min(i + chunk, n)
+                    ts = theta_star_cpu[i:j].to(device=device, dtype=torch.float32, non_blocking=True)
+                    fd = fdiag_cpu[i:j].to(device=device, dtype=torch.float32, non_blocking=True)
+                    th = theta_flat[i:j]
+                    d = th - ts
+                    total = total + (fd * d * d).sum()
+                    i = j
         return total
 
     def on_input_prep(self, model: nn.Module, args: tuple, kwargs: dict, context: CLContext) -> None:
@@ -355,6 +340,8 @@ class EwcIntegration(CLIntegration):
         return
 
     def on_forward_end(self, model: nn.Module, outputs: Any, context: CLContext) -> Any:
+        if getattr(self, "_ewc_skip_penalty_for_fisher", False):
+            return outputs
         if not model.training:
             return outputs
         loss = getattr(outputs, "loss", None)
@@ -371,13 +358,14 @@ class EwcIntegration(CLIntegration):
         return outputs
 
     def on_task_end(self, model: nn.Module, context: CLContext, task_id: int) -> None:
-        _LOG.debug("[EWC] on_task_end task_id=%s (anchors=%s)", task_id, list(self._anchors.keys()))
+        pass
 
     def get_inference_config(self) -> Dict[str, Any]:
         return {
             "ewc_lambda": self.ewc_lambda,
             "ewc_fisher_batches": self.ewc_fisher_batches,
             "ewc_fisher_micro_batch_size": self.ewc_fisher_micro_batch_size,
+            "ewc_penalty_chunk_elements": self._ewc_penalty_chunk_elements,
             "lora_r": int(getattr(self.config, "lora_r", 64)),
         }
 
@@ -408,5 +396,4 @@ class EwcIntegration(CLIntegration):
             self._anchors = {int(k): v for k, v in a.items()}
         if isinstance(f, dict):
             self._fisher = {int(k): v for k, v in f.items()}
-        _LOG.info("[EWC] loaded state from %s (tasks: %s)", path, sorted(self._anchors.keys()))
         return bool(self._anchors)

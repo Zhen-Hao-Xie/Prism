@@ -1,17 +1,3 @@
-"""
-SMoLoRA 指令侧（按优先级）：
-
-1. **自定义 .pkl**：``ins_emb_path`` 指向离线矩阵 ``[T, D]``，与作者仓库生成文件格式一致。
-2. **框架内建（推荐复现作者）**：未设 ``ins_emb_path`` 且 ``smolora_builtin_sentence_ins_emb`` 为 True 时，
-   在 ``initialize_model`` 内用 ``transformers`` 加载 MiniLM，对
-   ``method.custom.smolora.builtin_ins_emb.INS_EMB_SINGLE_INSTRUCTIONS`` 做 mean pooling，等价于单独运行
-   ``ins_gen.py`` 的 single 分支，无需再跑作者脚本。
-3. **CLIP 在线**：上述均关闭时，用 ``text_tower`` 写入 ``SMoLoraLinear._runtime_instruction_feat``。
-
-``smolora_expert_num`` 为 **VU+IF 专家总数（偶数）**；VU、IF 各占一半，每侧 gate 在各自一半里做 top-1
-（例如总数 8 → VU 4 选 1、IF 4 选 1）。
-"""
-
 from __future__ import annotations
 
 import os
@@ -67,7 +53,7 @@ class SmoloraIntegration(CLIntegration):
             self.ins_emb_dim: int = int(getattr(config, "ins_emb_dim", inferred_d))
             if self.ins_emb_dim != inferred_d:
                 raise ValueError(
-                    f"ins_emb_dim={self.ins_emb_dim} 与 ``{self._ins_emb_path}`` 最后一维 {inferred_d} 不一致。"
+                    f"ins_emb_dim={self.ins_emb_dim} does not match last dim {inferred_d} from {self._ins_emb_path}."
                 )
         else:
             self._use_builtin_sentence_ins_emb = bool(
@@ -94,7 +80,7 @@ class SmoloraIntegration(CLIntegration):
         if t.dim() == 1:
             t = t.unsqueeze(0)
         if t.dim() != 2:
-            raise ValueError(f"``{path}`` 中指令矩阵应为 2 维 [T, D]，得到 shape={tuple(t.shape)}")
+            raise ValueError(f"Instruction embedding tensor must be 2D [T, D]; got shape {tuple(t.shape)} for {path}")
         return t
 
     def initialize_model(self, model) -> None:
@@ -111,7 +97,7 @@ class SmoloraIntegration(CLIntegration):
         r = int(getattr(self.config, "lora_r", 64))
         if r % self.smolora_expert_num != 0:
             raise ValueError(
-                f"lora_r={r} 必须能被 smolora_expert_num={self.smolora_expert_num} 整除（SMoLoRA 对 rank 切分的要求）。"
+                f"lora_r={r} must be divisible by smolora_expert_num={self.smolora_expert_num}."
             )
 
         if self._use_builtin_sentence_ins_emb and self._author_ins_emb_list is None:
@@ -148,10 +134,6 @@ class SmoloraIntegration(CLIntegration):
         self._propagate_ins_type(model, tid)
 
     def _find_target_modules(self, model) -> List[str]:
-        """
-        ``peft_target_modules`` 由 ``METHOD_CONFIG`` / ``--peft_target_modules`` 决定；默认 ``attention``。
-        路径上仍依赖 ``exclude_module_path_segments`` 跳过 CLIP / mm_projector，避免误注入视觉塔等同名 Linear。
-        """
         return collect_peft_target_linear_suffixes(model, self.config)
 
     def _propagate_ins_type(self, model: Any, ins_type: int) -> None:

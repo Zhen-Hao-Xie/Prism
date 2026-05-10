@@ -36,18 +36,18 @@ if is_bnb_available():
 @dataclass
 class SMoLoraConfig(LoraConfig):
     """
-    SMoLoRA 配置。
+    SMoLoRA hyperparameters.
 
-    ``expert_num`` 为 **VU + IF 专家总数（须偶数）**：前 ``expert_num/2`` 个只参与 VU 分支（由
-    ``lora_vu_gate`` 在 ``expert_num/2`` 路里 top-1），后 ``expert_num/2`` 个只参与 IF 分支（由
-    ``lora_ins_gate`` 在 ``expert_num/2`` 路里 top-1）。因此要 **VU、IF 各 4 路** 时请设 ``expert_num=8``。
+    ``expert_num`` is the **total** VU + IF experts (must be even): first ``expert_num/2`` slots are VU-only
+    (``lora_vu_gate`` top-1 among ``expert_num/2``), last ``expert_num/2`` are IF-only (``lora_ins_gate``).
+    For **4 VU + 4 IF** routes use ``expert_num=8``.
     """
 
     expert_num: int = field(default=8)
     ins_type: int = field(default=0)
     ins_emb_dim: int = field(default=768)
-    # 作者仓库：Sentence-BERT 离线矩阵 ``[num_instructions, D]``（如 ``ins_gen.py`` 生成的 ``ins_emb_single.pkl``）；
-    # 非空时 ``SMoLoraLinear`` 按 ``ins_type`` 取第 ``ins_type`` 行并广播到 batch，与论文一致。
+    # Offline Sentence-BERT matrix ``[num_instructions, D]`` (e.g. ``ins_emb_single.pkl`` from ``ins_gen.py``);
+    # when set, ``SMoLoraLinear`` picks row ``ins_type`` and broadcasts (paper-aligned).
     ins_emb: Optional[Any] = field(default=None)
 
     def __post_init__(self):
@@ -58,7 +58,7 @@ class SMoLoraConfig(LoraConfig):
         self.peft_type = PeftType.SMOLORA
 
 
-# 这些子模块里的 Linear 也可能叫 q_proj / v_proj 等，不能替换成 SMoLora（否则 CLIP forward 会先于 integration 写特征而报错）
+# CLIP towers use Linear layers named like q_proj; do not wrap those or CLIP forward breaks before integration writes feats.
 _SMOLORA_REPLACE_SKIP_SUBSTR = (
     "vision_tower",
     "text_tower",
@@ -66,7 +66,7 @@ _SMOLORA_REPLACE_SKIP_SUBSTR = (
     "vision_resampler",
 )
 
-# 仅在这些 transformer block 上打印 IF 侧（lora_ins_gate）top-1 选中的专家索引（局部下标 0..expert_num/2-1）
+# Log IF-side (lora_ins_gate) top-1 expert only on these decoder block indices (local idx 0..expert_num/2-1)
 _IF_ROUTE_LOG_LAYERS = frozenset({10, 20, 30})
 
 
@@ -344,7 +344,7 @@ class SMoLoraLinear(nn.Linear, SMoLoraLayer):
         self._module_key: Optional[str] = module_key
         self.ins_type = ins_type
         self.ins_emb_dim = ins_emb_dim
-        # 与作者实现一致：非空时为 ``[T, D]`` 的嵌套 list（来自 ``ins_emb_single.pkl`` 等），按 ``ins_type`` 取行。
+        # Nested list [T, D] like ins_emb_single.pkl; row ins_type (paper-aligned).
         self.ins_emb = ins_emb
 
         self.lora_vu_gate = nn.ModuleDict(
@@ -397,11 +397,11 @@ class SMoLoraLinear(nn.Linear, SMoLoraLayer):
             self.merged = False
 
     def _log_if_route_top1(self, max_indices_if: torch.Tensor) -> None:
-        """打印 IF 侧（仅文本特征经 lora_ins_gate）top-1 选中的专家：局部下标，范围 [0, expert_num/2)。"""
+        """Log IF-side (lora_ins_gate) top-1 expert index; local slot in [0, expert_num/2)."""
         if self.layer_idx is None or self.layer_idx not in _IF_ROUTE_LOG_LAYERS:
             return
         tail = self._module_key.split(".")[-1] if self._module_key else "?"
-        # 每层只打一条：用 q_proj 代表该 block 的 IF 路由（与 k/v/o 结构相同，避免一步 12 行日志）
+            # One log line per layer: use q_proj as representative for the block's IF route
         if tail != "q_proj":
             return
         try:
@@ -427,7 +427,7 @@ class SMoLoraLinear(nn.Linear, SMoLoraLayer):
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
             x = x.to(self.lora_A[self.active_adapter].loraA[0].mlp.weight.dtype)
 
-            # 作者：离线 ``ins_emb[self.ins_type]`` 后广播；否则用 integration 写入的 CLIP 特征 ``[B, ins_emb_dim]``。
+            # Paper: offline ins_emb row then broadcast; else CLIP features [B, ins_emb_dim] from integration
             b = x.shape[0]
             if self.ins_emb is not None:
                 mat = torch.as_tensor(self.ins_emb, dtype=x.dtype, device=x.device)
@@ -440,8 +440,8 @@ class SMoLoraLinear(nn.Linear, SMoLoraLayer):
                 runtime = getattr(self, "_runtime_instruction_feat", None)
                 if runtime is None:
                     raise RuntimeError(
-                        "SMoLoRA 缺少指令特征：请在 `SMoLoraConfig` 中提供 `ins_emb`（作者 .pkl），"
-                        "或使用 `method.custom.smolora` 并配置 `text_tower` / `clip_tokenizer` 以写入 `_runtime_instruction_feat`。"
+                        "SMoLoRA needs instruction features: set `ins_emb` in `SMoLoraConfig` (offline .pkl), "
+                        "or use `method.custom.smolora` with `text_tower` / `clip_tokenizer` to fill `_runtime_instruction_feat`."
                     )
                 ins_clip = runtime.to(device=x.device, dtype=x.dtype)
                 if ins_clip.dim() == 1:

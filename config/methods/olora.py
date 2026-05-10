@@ -53,12 +53,12 @@ TRAIN_BATCH_SIZES = {
 }
 
 METHOD_CONFIG = {
-    # 官方 run_uie_lora.py：lora_dropout=0.1
+    # Reference run_uie_lora.py uses lora_dropout=0.1
     "lora_dropout": 0.1,
     "peft_target_modules": "attn_and_ffn",
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
     "olora_lambda": 0.5,
-    # 训练时每 N 次 forward 打印 CE/orth/total；0 关闭
+    # Log CE / orth / total every N forwards during training; 0 disables
     "olora_orthogonal_log_interval": 50,
 }
 

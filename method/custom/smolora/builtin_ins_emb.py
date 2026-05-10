@@ -1,11 +1,3 @@
-"""
-与 ``SMoLoRA/scripts/SMoLoRA/ins_gen.py`` 中 **single** 分支（``list_instruction`` + mean pooling）一致，
-在训练进程内用 ``transformers`` 加载 MiniLM 并生成 ``[T, D]`` 指令矩阵，无需单独跑作者脚本。
-
-若训练环境**不能访问** ``huggingface.co``：请把 ``smolora_sentence_transformer_model`` 设为**本机模型目录**
-（内含 ``config.json`` 与 tokenizer 文件），或改用 ``ins_emb_path`` / 关闭内建走 CLIP（见 ``compute_instruction_embeddings`` 抛错说明）。
-"""
-
 from __future__ import annotations
 
 import os
@@ -13,7 +5,7 @@ from typing import List, Sequence
 
 import torch
 
-# 与 ins_gen.py 中 ``list_instruction``（生成 ``ins_emb_single.pkl`` 的默认列表）逐字一致
+
 INS_EMB_SINGLE_INSTRUCTIONS: List[str] = [
     "Answer with the option's letter from the given choices directly.",
     "Answer the question using a single word or phrase.",
@@ -38,14 +30,13 @@ def _load_pretrained_or_raise(model_name: str, *, local_files_only: bool):
         model = AutoModel.from_pretrained(model_name, local_files_only=local_files_only)
     except Exception as e:
         hint = (
-            "加载 Sentence-Transformer / MiniLM 失败（常见于训练机无法访问 huggingface.co）。可选方案：\n"
-            "  1) 在能联网的机器上用 ``huggingface-cli download sentence-transformers/all-MiniLM-L6-v2`` "
-            "或浏览器下载快照，拷到训练机后，把 ``smolora_sentence_transformer_model`` 设为**该快照目录的绝对路径**"
-            "（目录内需有 ``config.json`` 与 tokenizer 相关文件，此时框架会自动 ``local_files_only=True``，不再请求外网）；\n"
-            "  2) 若可用镜像：启动前 ``export HF_ENDPOINT=https://hf-mirror.com``（以你环境可用的镜像为准）；\n"
-            "  3) 配置 ``ins_emb_path`` 指向已生成的 ``ins_emb_single.pkl``，可跳过内建句向量；\n"
-            "  4) 配置 ``smolora_builtin_sentence_ins_emb: False``，改用 CLIP ``text_tower`` 作为指令特征。\n"
-            f"  原始错误: {type(e).__name__}: {e}"
+            "Failed to load Sentence-Transformer / MiniLM (often no access to huggingface.co). Options: "
+            "(1) Download sentence-transformers/all-MiniLM-L6-v2 on a machine with network and set "
+            "smolora_sentence_transformer_model to that local snapshot directory (must contain config.json); "
+            "(2) Use HF mirror via HF_ENDPOINT; "
+            "(3) Set ins_emb_path to a pre-built ins_emb_single.pkl; "
+            "(4) Set smolora_builtin_sentence_ins_emb=False and use CLIP text_tower. "
+            f"Original error: {type(e).__name__}: {e}"
         )
         raise RuntimeError(hint) from e
     return tokenizer, model

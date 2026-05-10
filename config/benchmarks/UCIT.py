@@ -1,10 +1,10 @@
-from ..paths.paths import CHECKPOINT_DIR, INSTRUCTION_DIR, PRETRAIN_MM_PROJECTOR
+from ..paths.llava_paths import CHECKPOINT_DIR, INSTRUCTION_DIR, PRETRAIN_MM_PROJECTOR
 
-# 由于UCIT的指令数据在/root/autodl-tmp/UCIT/instructions下，直接配置根路径
+# UCIT instruction roots (adjust for your machine)
 UCIT_INSTRUCTION_DIR = "/root/autodl-tmp/UCIT/instructions"
 UCIT_IMAGE_DIR = "/root/autodl-tmp/UCIT/datasets"
 
-# 数据文件名使用**不含 _sub** 的规范路径；训练/推理时在 run.py 中按 run_config.use_sub_dataset 自动加 _sub
+# Canonical json names without _sub; run.py applies _sub when run_config.use_sub_dataset says so
 UCIT_TASKS = [
     {
         "cur_task": 0,

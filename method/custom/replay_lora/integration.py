@@ -1,16 +1,3 @@
-"""
-replay_lora：在主干上注入普通 LoRA（默认 ``attn_and_ffn``），并配合固定容量、按任务均分的回放缓冲区。
-
-**Loss**：经 ``memory_data_path`` 混入 ``LazySupervisedDataset`` 的回放行与当前任务行一样走 ``preprocess`` → forward，
-参与同一个 LM loss；**没有**单独「无 loss 的回放前向」。``on_training_batch_end`` 里写入 buffer 的只是 JSON 副本，
-用于**后续任务**；该步 loss 已在同一步对**当前 batch 张量**算过。
-
-- 训练任务 ``k`` 开始前：槽 ``0..k-1`` → 侧车 JSON + ``data_args.memory_data_path``，与主数据 extend 后 shuffle。
-- 训练中：``LLaVATrainer`` 在每个 micro-batch 的 backward 之后调用 ``on_training_batch_end``；
-  对 ``cl_raw_example`` 逐条 ``should_store_training_example``，为真则写入当前任务槽。仅 rank0 改 buffer。
-  最后一项任务不写槽。
-"""
-
 from __future__ import annotations
 
 import copy
@@ -43,7 +30,6 @@ def _count_json_list_samples(path: Optional[str]) -> Optional[int]:
 
 
 class TaskPartitionedReplayBuffer:
-    """总容量按 ``task_num - 1`` 均分；训练任务 ``k`` 只写入第 ``k`` 槽；回放仅使用 ``0..k-1``。"""
 
     def __init__(self, task_num: int, total_capacity: int):
         self.task_num = int(task_num)
@@ -78,7 +64,6 @@ class TaskPartitionedReplayBuffer:
         return out
 
     def counts_mixed_into_training(self, cur_task: int) -> List[int]:
-        """训练 ``cur_task`` 时，自历史槽 ``0..cur_task-1`` 各混入的条数（槽 ``t`` 对应来源任务 ``t``）。"""
         k = int(cur_task)
         if k <= 0 or self.n_slot <= 0:
             return []
@@ -123,12 +108,6 @@ class Replay_loraIntegration(CLIntegration):
         for _, p in model.named_parameters():
             p.requires_grad = False
         self._setup_lora(model)
-        print(
-            f"[replay_lora] LoRA | buffer_slots={self.buffer.n_slot} "
-            f"per_slot_cap={self.buffer.per_slot_cap} | "
-            f"store_prob={self.replay_sample_prob} (per-sample via should_store_training_example; current cl_raw_example)",
-            flush=True,
-        )
 
     def _find_target_modules(self, model: nn.Module) -> List[str]:
         return collect_peft_target_linear_suffixes(model, self.config)
@@ -165,24 +144,6 @@ class Replay_loraIntegration(CLIntegration):
 
         counts = self.buffer.counts_mixed_into_training(cur)
         main_n = _count_json_list_samples(self._replay_source_path)
-        if rank <= 0:
-            main_hint = f" | current_task_json_samples={main_n}" if main_n is not None else ""
-            if cur <= 0 or self.buffer.n_slot <= 0:
-                print(
-                    f"[replay_lora] before task {cur}: no past-task replay mixed "
-                    f"(train set = current task JSON only){main_hint}",
-                    flush=True,
-                )
-            else:
-                per = [f"task{t}={c}" for t, c in enumerate(counts)]
-                total = sum(counts)
-                merged = (main_n + total) if main_n is not None else None
-                merged_hint = f" | merged_list_len≈{merged} after extend+shuffle" if merged is not None else ""
-                print(
-                    f"[replay_lora] before task {cur}: replay by source — {', '.join(per)} | "
-                    f"total_replay={total}{main_hint}{merged_hint}",
-                    flush=True,
-                )
 
         mem = self.buffer.flatten_past_slots(cur)
         if not mem:
@@ -196,17 +157,6 @@ class Replay_loraIntegration(CLIntegration):
         if rank <= 0:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(mem, f, ensure_ascii=False)
-            if main_n is not None:
-                print(
-                    f"[replay_lora] data module: main={main_n} + replay={len(mem)} => "
-                    f"LazySupervisedDataset list len {main_n + len(mem)} (then shuffled) | sidecar {path}",
-                    flush=True,
-                )
-            else:
-                print(
-                    f"[replay_lora] replay sidecar written: {len(mem)} samples -> {path}",
-                    flush=True,
-                )
         if torch.distributed.is_available() and torch.distributed.is_initialized():
             torch.distributed.barrier()
         data_args.memory_data_path = path
@@ -227,7 +177,6 @@ class Replay_loraIntegration(CLIntegration):
         example_index: int,
         loss: Optional[torch.Tensor] = None,
     ) -> bool:
-        """默认：以 ``replay_sample_prob`` 对当前样本伯努利抽样。可重写以接入特征/难度等。"""
         if self.replay_sample_prob <= 0:
             return False
         return random.random() < self.replay_sample_prob
@@ -273,7 +222,7 @@ class Replay_loraIntegration(CLIntegration):
         return outputs
 
     def on_task_end(self, model: nn.Module, context: CLContext, task_id: int) -> None:
-        print(f"[replay_lora] task {task_id} end | slot_sizes={[len(s) for s in self.buffer.slots]}", flush=True)
+        pass
 
     def get_inference_config(self) -> Dict[str, Any]:
         return {}
@@ -294,5 +243,4 @@ class Replay_loraIntegration(CLIntegration):
         if not isinstance(d, dict):
             return False
         self.buffer.load_state_dict(d)
-        print(f"[replay_lora] loaded buffer from {path}", flush=True)
         return True

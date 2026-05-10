@@ -1,4 +1,4 @@
-"""JSON / JSONL 加载（与 CL 无关）。"""
+"""Load JSON / JSONL (CL-agnostic)."""
 import json
 
 

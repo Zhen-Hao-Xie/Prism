@@ -1,6 +1,4 @@
-"""
-数据处理函数模块：包含图像处理、tokenization、对话预处理等功能
-"""
+"""Image helpers, tokenization, and conversation preprocessing."""
 import copy
 import base64
 from io import BytesIO
@@ -8,12 +6,12 @@ from typing import Dict, Sequence, Any, List
 import torch
 from PIL import Image
 import transformers
-from config.backbones.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from config.backbone.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from . import conversation as conversation_lib
 import math
 
 def expand2square(pil_img, background_color):
-    """将图片扩展为正方形，用背景色填充"""
+    """Pad image to a square with ``background_color``."""
     width, height = pil_img.size
     if width == height:
         return pil_img
@@ -28,12 +26,12 @@ def expand2square(pil_img, background_color):
 
 
 def load_image_from_base64(image):
-    """从base64字符串加载图片"""
+    """Load image from a base64 string."""
     return Image.open(BytesIO(base64.b64decode(image)))
 
 
 def process_images(images, image_processor, model_cfg):
-    """批量处理图片"""
+    """Batch image preprocessing."""
     image_aspect_ratio = getattr(model_cfg, "image_aspect_ratio", None)
     new_images = []
     if image_aspect_ratio == 'pad':
@@ -49,7 +47,7 @@ def process_images(images, image_processor, model_cfg):
 
 
 def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX, return_tensors=None):
-    """将prompt中的<image>替换为image token"""
+    """Replace ``<image>`` in ``prompt`` with the image token id."""
     prompt_chunks = [tokenizer(chunk).input_ids for chunk in prompt.split('<image>')]
 
     def insert_separator(X, sep):
@@ -72,7 +70,7 @@ def tokenizer_image_token(prompt, tokenizer, image_token_index=IMAGE_TOKEN_INDEX
 
 
 def get_model_name_from_path(model_path):
-    """从路径中提取模型名"""
+    """Derive a short model name from a checkpoint path."""
     model_path = model_path.strip("/")
     model_paths = model_path.split("/")
     if model_paths[-1].startswith('checkpoint-'):
@@ -98,8 +96,7 @@ def smart_tokenizer_and_embedding_resize(
 
 def _normalize_to_list(obj: Any) -> List[Any]:
     """
-    推理/训练数据在不同 benchmark 下可能是 list 或 dict(json)。
-    这里统一转换成可切片的 list，避免 split_list 对 dict 切片时报错。
+    Benchmarks may provide list or dict JSON; normalize to a sliceable list for ``split_list``.
     """
     if obj is None:
         return []
@@ -108,22 +105,21 @@ def _normalize_to_list(obj: Any) -> List[Any]:
     if isinstance(obj, tuple):
         return list(obj)
     if isinstance(obj, dict):
-        # 常见数据格式：{"questions":[...]} / {"data":[...]} / {"samples":[...]}
+        # Common wrappers: questions / data / samples / ...
         for key in ("questions", "data", "samples", "annotations", "instances"):
             val = obj.get(key, None)
             if isinstance(val, list):
                 return val
-        # 兜底：只取 values（大多数情况下 dict 本身是 id->sample）
+        # Fallback: id -> sample dict
         return list(obj.values())
-    # 其他可迭代对象（如 Dataset、generator）转 list；不可迭代则抛更清晰的错误
     try:
         return list(obj)
     except TypeError as e:
-        raise TypeError(f"split_list 期望 list-like，但收到 {type(obj)}") from e
+        raise TypeError(f"Expected list-like input for split_list, got {type(obj)}") from e
 
 
 def split_list(lst, n):
-    """将列表均匀分成 n 份（兼容 dict/json 数据）"""
+    """Split ``lst`` into ``n`` chunks (accepts dict/json via normalization)."""
     lst = _normalize_to_list(lst)
     if n <= 0:
         raise ValueError(f"n must be positive, got n={n}")
@@ -133,14 +129,14 @@ def split_list(lst, n):
     return [lst[i : i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
 def get_chunk(lst, n, k):
-    """获取第 k 份数据"""
+    """Return chunk ``k`` after ``split_list(lst, n)``."""
     chunks = split_list(lst, n)
     return chunks[k]
 
-# ---------- 以下为对话预处理函数 ----------
+# --- Conversation preprocessing ---
 
 def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
-    """批量tokenize字符串"""
+    """Tokenize a batch of strings."""
     tokenized_list = [
         tokenizer(
             text,
@@ -156,7 +152,7 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedToken
 
 
 def _mask_targets(target, tokenized_lens, speakers):
-    """对目标进行mask（忽略human部分）"""
+    """Mask labels so human turns do not contribute to loss."""
     cur_idx = tokenized_lens[0]
     tokenized_lens = tokenized_lens[1:]
     target[:cur_idx] = IGNORE_INDEX
@@ -167,7 +163,7 @@ def _mask_targets(target, tokenized_lens, speakers):
 
 
 def _add_speaker_and_signal(header, source, get_conversation=True):
-    """添加说话人标记和信号"""
+    """Prepend speaker markers to each turn."""
     BEGIN_SIGNAL = "### "
     END_SIGNAL = "\n"
     conversation = header
@@ -187,7 +183,7 @@ def _add_speaker_and_signal(header, source, get_conversation=True):
 
 
 def preprocess_multimodal(sources: Sequence[str], data_args) -> Dict:
-    """预处理多模态数据，处理image token"""
+    """Prepare multimodal sources (image token placement)."""
     is_multimodal = data_args.is_multimodal
     if not is_multimodal:
         return sources
@@ -207,7 +203,7 @@ def preprocess_multimodal(sources: Sequence[str], data_args) -> Dict:
 
 
 def preprocess_llama_2(sources, tokenizer, has_image=False) -> Dict:
-    """LLaMA-2格式的预处理"""
+    """LLaMA-2 chat template preprocessing."""
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
     conversations = []
@@ -253,7 +249,7 @@ def preprocess_llama_2(sources, tokenizer, has_image=False) -> Dict:
 
 
 def preprocess_v1(sources, tokenizer, has_image=False) -> Dict:
-    """V1格式的预处理"""
+    """v1 conversation template preprocessing."""
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
     conversations = []
@@ -299,7 +295,7 @@ def preprocess_v1(sources, tokenizer, has_image=False) -> Dict:
 
 
 def preprocess_mpt(sources, tokenizer) -> Dict:
-    """MPT格式的预处理"""
+    """MPT conversation template preprocessing."""
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
     conversations = []
@@ -341,7 +337,7 @@ def preprocess_mpt(sources, tokenizer) -> Dict:
 
 
 def preprocess_plain(sources, tokenizer) -> Dict:
-    """普通格式的预处理"""
+    """PLAIN separator style preprocessing."""
     conversations = []
     for source in sources:
         assert len(source) == 2
@@ -358,7 +354,7 @@ def preprocess_plain(sources, tokenizer) -> Dict:
 
 
 def preprocess(sources, tokenizer, has_image=False) -> Dict:
-    """统一的预处理入口，根据对话风格选择对应的预处理函数"""
+    """Dispatch by ``default_conversation`` style."""
     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.PLAIN:
         return preprocess_plain(sources, tokenizer)
     if conversation_lib.default_conversation.sep_style == conversation_lib.SeparatorStyle.LLAMA_2:
@@ -367,8 +363,8 @@ def preprocess(sources, tokenizer, has_image=False) -> Dict:
         return preprocess_v1(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version == "mpt":
         return preprocess_mpt(sources, tokenizer)
-    
-    # 默认格式
+
+    # Default template
     conversations = []
     for source in sources:
         header = f"{conversation_lib.default_conversation.system}\n\n"

@@ -1,11 +1,11 @@
-"""图像路径解析（推理等场景，与 CL 无关）。"""
+"""Resolve image paths under a folder (inference; CL-agnostic)."""
 import os
 
 from tqdm import tqdm
 
 
 class ImageFinder:
-    """在文件夹中递归查找图像文件，支持通过文件名或相对路径查找"""
+    """Recursive image lookup by file name or relative path."""
 
     def __init__(self, image_folder):
         self.image_folder = image_folder

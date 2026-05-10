@@ -1,4 +1,4 @@
-"""推理用问答列表加载（与 CL 无关）。"""
+"""Question list loading for inference (CL-agnostic)."""
 import os
 from typing import Any, Dict, Iterator, List
 

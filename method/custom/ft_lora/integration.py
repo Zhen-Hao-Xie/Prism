@@ -1,10 +1,3 @@
-"""
-ft_lora：在 LLM 的 attention ∪ FFN（``attn_and_ffn``）注入标准 LoRA，逐任务顺序微调。
-
-沿用 ``replay_lora`` 的 LoRA 注入方式（``PEFT.LoraConfig`` + ``get_peft_model``），但不做经验回放与额外状态；
-前一任务的 checkpoint 仍可通过 ``previous_task_model_path`` / 推理 ``load_adapter`` 载入同一适配器继续训练。
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -26,13 +19,6 @@ class Ft_loraIntegration(CLIntegration):
         for _, p in model.named_parameters():
             p.requires_grad = False
         self._setup_lora(model)
-        r = int(getattr(self.config, "lora_r", 96))
-        alpha = int(getattr(self.config, "lora_alpha", r * 2))
-        print(
-            f"[ft_lora] vanilla LoRA | target=attn+ffn | r={r} alpha={alpha} "
-            f"| sequential fine-tuning (no replay)",
-            flush=True,
-        )
 
     def _find_target_modules(self, model: nn.Module) -> List[str]:
         return collect_peft_target_linear_suffixes(model, self.config)

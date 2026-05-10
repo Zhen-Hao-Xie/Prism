@@ -1,7 +1,3 @@
-"""
-SAME 方法实现（集成到 CLIntegration 生命周期）。
-"""
-
 from __future__ import annotations
 
 import os
@@ -19,10 +15,6 @@ _PEFT_EXT_REGISTERED = False
 
 
 def ensure_peft_extension_registered() -> None:
-    """
-    按需注入 SAME 的 PEFT 映射（幂等）。
-    即使 PEFT 目录已经静态注册了 mapping，这里也不会有副作用。
-    """
     global _PEFT_EXT_REGISTERED
     if _PEFT_EXT_REGISTERED:
         return
@@ -77,11 +69,6 @@ class SameIntegration(RouterIntegration):
             get_peft_model(model, peft_config)
 
     def _find_target_modules(self, model) -> List[str]:
-        """
-        与 ``METHOD_CONFIG.peft_target_modules`` / ``--peft_target_modules`` 对齐：
-        ``ffn`` / ``attn``（``attention``）/ ``linear``（``all``/``full``）等，见 ``PEFT.utils.peft_target_modules``。
-        未配置时默认仅 attention（与原 SAME 行为一致）。
-        """
         return collect_peft_target_linear_suffixes(model, self.config)
 
     def on_forward_start(self, model, context: CLContext) -> None:
@@ -94,11 +81,9 @@ class SameIntegration(RouterIntegration):
         return
 
     def on_task_end(self, model, context: CLContext, task_id: int) -> None:
-        # SAME 任务结束：固化每层 covariance 快照
         for module in model.modules():
             if hasattr(module, "save_task_covariance_snapshot") and hasattr(module, "active_adapter"):
                 adapter = getattr(module, "active_adapter", None)
-                # PEFT sometimes uses list[str] for active adapters
                 if isinstance(adapter, (list, tuple)) and adapter:
                     adapter = adapter[0]
                 if not isinstance(adapter, str) or not adapter:
@@ -125,7 +110,6 @@ class SameIntegration(RouterIntegration):
         self.merge_extra_into_adapter_safetensors(
             output_dir, extra, on_duplicate_key="prefer_second"
         )
-        # 始终写 sidecar，避免仅依赖 safetensors 嵌入时因多卡竞态/旧 checkpoint 丢键而无法恢复
         torch.save(same_state, os.path.join(output_dir, "same_state.bin"))
         return True
 

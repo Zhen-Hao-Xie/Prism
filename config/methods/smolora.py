@@ -1,11 +1,11 @@
 """
-默认配置：方法 ``smolora``（SMoLoRA）。
+Defaults for method ``smolora`` (SMoLoRA).
 
-指令侧优先级：``ins_emb_path``（自定义 .pkl）>
-``smolora_builtin_sentence_ins_emb``（框架内建 MiniLM，等价 ``ins_gen.py`` single）>
-否则 CLIP ``text_tower``（特征维见 ``config.backbone.llava.CLIP_FEATURE_DIM``，通常 768）。
+Instruction side priority: ``ins_emb_path`` (custom .pkl) >
+``smolora_builtin_sentence_ins_emb`` (built-in MiniLM, same role as ``ins_gen.py`` single) >
+else CLIP ``text_tower`` (feature dim ``config.backbone.llava.CLIP_FEATURE_DIM``, typically 768).
 
-PEFT 注入位置：``METHOD_CONFIG["peft_target_modules"]`` 或 ``--peft_target_modules``（``attn`` / ``ffn`` / ``linear`` 等），默认 ``attention``；见 ``PEFT/utils/peft_target_modules.py``。
+PEFT placement: ``METHOD_CONFIG["peft_target_modules"]`` or ``--peft_target_modules`` (``attn`` / ``ffn`` / ``linear``, …); default ``attention``; see ``PEFT/utils/peft_target_modules.py``.
 """
 
 from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION

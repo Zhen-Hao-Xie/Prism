@@ -1,12 +1,14 @@
 """
 Defaults for method: hide_llava
 
-PEFT 路径过滤：本文件 ``METHOD_CONFIG`` 已显式设为仅 LLM 主干注入（``PEFT.utils.peft_scope_defaults``）。
-若要改为全模型可注入，将 ``exclude_module_path_segments`` 设为 ``[]``；自定义跳过列表见 ``config/methods/README.md``。
+PEFT path filtering: ``METHOD_CONFIG`` here pins injection to the LLM trunk only
+(``PEFT.utils.peft_scope_defaults``). Use ``exclude_module_path_segments=[]`` for full-model injection;
+custom skip lists are documented in ``config/methods/README.md``.
 
-注入子层：默认仅 **Transformer 内 attention + FFN 投影**（``peft_target_modules: attn_and_ffn``），不包含 ``lm_head``；可用 ``--peft_target_modules`` 覆盖，见 ``PEFT/utils/peft_target_modules.py``。
-按 benchmark 的 LoRA 规模：仅维护 ``METHOD_CONFIG`` + ``METHOD_CONFIG_BY_BENCHMARK``；
-训练时由 ``load_model_for_train`` 将其中 ``lora_r`` / ``lora_alpha`` / ``lora_dropout`` 写入 ``TrainingArguments``（子进程若显式传入 ``--lora_*`` 则仍以 CLI 为准）。
+Layers: default **attention + FFN** inside the Transformer (``peft_target_modules: attn_and_ffn``), no ``lm_head``;
+override with ``--peft_target_modules`` (see ``PEFT/utils/peft_target_modules.py``).
+Per-benchmark LoRA sizes live in ``METHOD_CONFIG`` + ``METHOD_CONFIG_BY_BENCHMARK``; ``load_model_for_train`` copies
+``lora_r`` / ``lora_alpha`` / ``lora_dropout`` into ``TrainingArguments`` (CLI ``--lora_*`` still wins).
 """
 
 from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
@@ -57,15 +59,15 @@ TRAIN_BATCH_SIZES = {
 
 # Method parameters (used by method factory / integrations if needed)
 METHOD_CONFIG = {
-    # 默认 LoRA 规模（CoIN 等与未出现在 METHOD_CONFIG_BY_BENCHMARK 的 benchmark）
+    # Default LoRA size when benchmark not listed in METHOD_CONFIG_BY_BENCHMARK
     "lora_dropout": 0.05,
-    # attention ∪ FFN（q/k/v/o + gate/up/down），不含 lm_head；与 HiDe PEFT 注册（MOE_LORA_HiDe）配套
+    # Attention ∪ FFN (no lm_head); matches HiDe PEFT type MOE_LORA_HiDe
     "peft_target_modules": "attn_and_ffn",
-    # 显式：仅 LLM 主干注入（与 PEFT 默认 None 等价，便于各方法配置一致）
+    # Explicit LLM-only injection (same idea as PEFT default None, kept for clarity)
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
 }
 
-# 按 benchmark 覆盖 METHOD_CONFIG 同名字段（推理 merge、与 train 对齐）
+# METHOD_CONFIG overrides per benchmark (keep inference merges aligned with train)
 METHOD_CONFIG_BY_BENCHMARK = {
     "ucit": {
         "lora_r": 96,

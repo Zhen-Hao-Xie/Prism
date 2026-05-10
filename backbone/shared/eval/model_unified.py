@@ -5,13 +5,13 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List
 
 try:
-    from config.backbones.llava import DEFAULT_CONV_MODE
+    from config.backbone.llava import DEFAULT_CONV_MODE
 except Exception:
     DEFAULT_CONV_MODE = "vicuna_v1"
 
 
 def _eval_preload_llama_tokenizer_from_argv() -> None:
-    """在导入 torch 之前预热 LLaMA SPM tokenizer，避免与 PyTorch inductor 后台线程并发导致 sentencepiece 段错误。"""
+    """Warm up LLaMA SPM tokenizer before importing torch (avoids sentencepiece races with inductor)."""
     if os.environ.get("MCIT_SKIP_SPM_PRELOAD", "").strip() in ("1", "true", "yes"):
         return
     probe = argparse.ArgumentParser(add_help=False)
@@ -171,7 +171,7 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
             "disco",
             "modal_prompt",
         ],
-        help="持续学习方法（须与 checkpoint 训练时 method 一致；与 common/load_model.load_model_for_inference 对齐）",
+        help="CL method (must match training checkpoint; same as common/load_model.load_model_for_inference)",
     )
     parser.add_argument("--batch-size", type=int, default=1,
                         help="Batch size for inference")
@@ -179,14 +179,14 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         "--benchmark",
         type=str,
         default=None,
-        help="ucit / coin 等；用于推导 CL 的 task_num（与 run.py infer 一致）。method=zeroshot 时不需要",
+        help="ucit / coin / … for CL task_num (same as run.py infer). Not needed for method=zeroshot.",
     )
     parser.add_argument(
         "--task-num",
         dest="cl_task_num",
         type=int,
         default=None,
-        help="显式指定 CL 的 task_num；若设置则优先于 --benchmark 推导。method=zeroshot 时不需要",
+        help="Explicit CL task_num (overrides --benchmark). Not needed for method=zeroshot.",
     )
 
 

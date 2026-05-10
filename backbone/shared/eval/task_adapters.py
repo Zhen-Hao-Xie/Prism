@@ -5,7 +5,7 @@ import torch
 import torch.distributed as dist
 
 from backbone.shared.data import ImageFinder
-from config.backbones.constants import (
+from config.backbone.constants import (
     DEFAULT_IMAGE_TOKEN,
     DEFAULT_IM_END_TOKEN,
     DEFAULT_IM_START_TOKEN,
@@ -135,17 +135,15 @@ class DefaultTaskAdapter(BaseInferenceAdapter):
 
 class ScienceQATaskAdapter(BaseInferenceAdapter):
     """
-    ScienceQA 任务适配器
-    
-    Anchors 的加载由基类和 load_model_for_inference 统一处理，
-    这里只需要实现推理逻辑。
+    ScienceQA task adapter.
+
+    Anchors are loaded by the base stack / load_model_for_inference; this class only implements inference.
     """
 
     def on_model_ready(self, context: InferenceContext) -> None:
-        """模型就绪时的回调"""
+        """Called when the model is ready."""
         disable_torch_init()
 
-        # 初始化文本模块（如果需要）
         if hasattr(context.model, 'initialize_text_modules'):
             context.model.initialize_text_modules(context.args)
             print("Text tower modules initialized")
@@ -153,7 +151,7 @@ class ScienceQATaskAdapter(BaseInferenceAdapter):
         self._verify_anchors_loaded(context.model)
 
     def _verify_anchors_loaded(self, model: Any) -> None:
-        """验证 anchors 是否已正确加载"""
+        """Check anchor tensors exist."""
         missing = []
         for attr in ['image_anchors', 'text_anchors', 'image_boundary', 'text_boundary']:
             if not hasattr(model, attr):
@@ -162,7 +160,6 @@ class ScienceQATaskAdapter(BaseInferenceAdapter):
         if missing:
             print(f"Warning: Missing anchors: {missing}")
         else:
-            # 打印简要信息
             num_tasks = len(model.image_anchors) if hasattr(
                 model, 'image_anchors') else 0
             print(f"Anchors loaded for {num_tasks} tasks")
@@ -274,7 +271,7 @@ class ScienceQATaskAdapter(BaseInferenceAdapter):
         qs = question.replace("<image>", "").strip()
         cur_prompt = qs
 
-        # 处理图像
+        # Images
         images = None
         if "image" in sample:
             image = read_image(os.path.join(
@@ -290,13 +287,13 @@ class ScienceQATaskAdapter(BaseInferenceAdapter):
                 qs = DEFAULT_IMAGE_TOKEN + "\n" + qs
             cur_prompt = "<image>\n" + cur_prompt
 
-        # 添加提示后缀
+        # Optional answer-choice suffix
         if context.args.single_pred_prompt:
             suffix = "Answer with the option's letter from the given choices directly."
             qs = qs + "\n" + suffix
             cur_prompt = cur_prompt + "\n" + suffix
 
-        # 构建对话
+        # Build conversation
         conv = conv_templates[context.args.conv_mode].copy()
         conv.append_message(conv.roles[0], qs)
         conv.append_message(conv.roles[1], None)
@@ -307,13 +304,13 @@ class ScienceQATaskAdapter(BaseInferenceAdapter):
             prompt, context.tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt")
         input_ids = input_ids.unsqueeze(0).cuda()
 
-        # 停止条件
+        # Stop string
         stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         keywords = [stop_str]
         stopping_criteria = [KeywordsStoppingCriteria(
             keywords, context.tokenizer, input_ids)] if conv.version == "v0" else None
 
-        # 生成
+        # Generate
         output_ids = default_generate(
             context.model,
             input_ids,
@@ -329,7 +326,7 @@ class ScienceQATaskAdapter(BaseInferenceAdapter):
             outputs = outputs[:-len(stop_str)]
         outputs = outputs.strip()
 
-        # 如果需要答案提取
+        # Optional second-stage answer extraction
         if context.args.answer_prompter:
             outputs_reasoning = outputs
             prompt_with_answer = prompt + outputs_reasoning + " ###\nANSWER:"

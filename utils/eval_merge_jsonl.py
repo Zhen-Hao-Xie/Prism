@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """
-仅根据 merge.jsonl（或 merge.json）做评测，不跑推理。
+Evaluate from merge.jsonl (or merge.json) only; does not run inference.
 
-路径约定（与 run.py 一致；自动兼容少一层 method 的旧路径）::
+Directory layout (same as run.py; supports legacy paths without a ``method`` segment)::
 
-    规范: <RESULT_DIR>/<BACKBONE>/<BenchmarkDir>/<method>/<数据集任务名>/<stage>/merge.jsonl
-    兼容: <RESULT_DIR>/<BACKBONE>/<BenchmarkDir>/<数据集任务名>/<stage>/merge.jsonl
+    Canonical: <RESULT_DIR>/<BACKBONE>/<BenchmarkDir>/<method>/<dataset_task>/<stage>/merge.jsonl
+    Legacy:    <RESULT_DIR>/<BACKBONE>/<BenchmarkDir>/<dataset_task>/<stage>/merge.jsonl
 
-例如::
+Example::
 
     .../results/llava/UCIT/same/Flickr30k/last/merge.jsonl
 
-由此解析 benchmark（UCIT/CoIN → ucit/coin）、数据集（TaskName，对应 BENCHMARKS 里任务的 ``name``），
-再选择 ``EVAL_TASK_MAP`` 中的评测方式。
+Parses benchmark (UCIT/CoIN → ucit/coin), dataset task name (``name`` in BENCHMARKS), then picks the
+evaluator from ``EVAL_TASK_MAP``.
 
-Flickr30k / Vizcap（COCO captions）：用 ``question_id`` 对齐标注里的 ``images[].file_name``  stem → ``image_id``，
-并只对预测中出现的 ``image_id`` 过滤 GT，避免子集预测与全量 3000 条标注键不一致导致 pycocoevalcap 断言失败。
+Flickr30k / Vizcap (COCO captions): map ``question_id`` to ``image_id`` via ``images[].file_name`` stem,
+filter GT to predicted ``image_id`` only so pycocoevalcap does not assert on full 3000-key annotations.
 
-用法::
+Usage::
 
     python scripts/eval_merge_jsonl.py /path/to/merge.jsonl
-    python scripts/eval_merge_jsonl.py /path/to/result_dir   # 自动找 merge.jsonl
+    python scripts/eval_merge_jsonl.py /path/to/result_dir   # finds merge.jsonl
     python scripts/eval_merge_jsonl.py merge.jsonl --benchmark ucit --task-id 5
 """
 
@@ -35,16 +35,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
-# 项目根：scripts/ 上一级
+# Project root: parent of scripts/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config.benchmarks import BENCHMARKS  # noqa: E402
-from config.benchmarks.sub_dataset import apply_use_sub_dataset_to_task  # noqa: E402
+from utils.sub_dataset import apply_use_sub_dataset_to_task  # noqa: E402
 
 
-# 与 run.py 中 EVAL_TASK_MAP 保持一致
+# Keep in sync with run.py EVAL_TASK_MAP
 EVAL_TASK_MAP: Dict[str, str] = {
     "ScienceQA": "scienceqa",
     "TextVQA": "textvqa",
@@ -96,7 +96,7 @@ def resolve_merge_path(arg: Path) -> Path:
             c = p / name
             if c.is_file():
                 return c
-        raise FileNotFoundError(f"目录下未找到 merge.jsonl / merge.json: {p}")
+        raise FileNotFoundError(f"No merge.jsonl / merge.json under directory: {p}")
     if not p.is_file():
         raise FileNotFoundError(str(p))
     return p
@@ -104,15 +104,15 @@ def resolve_merge_path(arg: Path) -> Path:
 
 def parse_result_layout(merge_path: Path) -> Tuple[str, str, str, Path]:
     """
-    从 merge 文件路径解析 (benchmark_key, task_name, stage, result_dir)。
+    Parse (benchmark_key, task_name, stage, result_dir) from merge file path.
 
-    自 ``stage`` 目录向上：规范为 ``…/<Benchmark>/<method>/<dataset>/<stage>``；
-    若 ``…/<Benchmark>/<dataset>/<stage>``（少一层 method）仍可解析。
+    Walk upward from ``stage``: canonical ``…/<Benchmark>/<method>/<dataset>/<stage>``;
+    legacy ``…/<Benchmark>/<dataset>/<stage>`` (no method) also works.
     """
     result_dir = merge_path.parent.resolve()
     stage = result_dir.name
     if not stage:
-        raise ValueError("无效的 merge 父目录名（stage）。")
+        raise ValueError("Invalid merge parent directory name (stage).")
 
     up: List[str] = []
     cur = result_dir.parent
@@ -124,10 +124,10 @@ def parse_result_layout(merge_path: Path) -> Tuple[str, str, str, Path]:
 
     if len(up) < 2:
         raise ValueError(
-            "无法从路径解析：父目录层级过浅。\n"
-            "期望: .../<BACKBONE>/<UCIT|CoIN>/<method>/<TaskName>/<stage>/merge.jsonl\n"
-            "  或: .../<BACKBONE>/<UCIT|CoIN>/<TaskName>/<stage>/merge.jsonl\n"
-            "或使用 --benchmark 与 --task-id / --task-name。"
+            "Cannot parse path: directory depth too shallow.\n"
+            "Expected: .../<BACKBONE>/<UCIT|CoIN>/<method>/<TaskName>/<stage>/merge.jsonl\n"
+            "  or: .../<BACKBONE>/<UCIT|CoIN>/<TaskName>/<stage>/merge.jsonl\n"
+            "Or pass --benchmark with --task-id / --task-name."
         )
 
     task_name: str
@@ -138,14 +138,14 @@ def parse_result_layout(merge_path: Path) -> Tuple[str, str, str, Path]:
         task_name = up[0]
         bench_folder = up[2]
     elif _is_benchmark_dir_segment(up[1]):
-        # …/Benchmark/<TaskName>/stage（无 method，兼容旧落盘）
+        # …/Benchmark/<TaskName>/stage (legacy layout without method)
         task_name = up[0]
         bench_folder = up[1]
     else:
         raise ValueError(
-            "无法从路径解析：在父路径上未找到 UCIT 或 CoIN 目录。\n"
-            f"  自 stage 向上的片段: {up!r}\n"
-            "请确认结果目录结构，或使用 --benchmark / --task-id。"
+            "Cannot parse path: UCIT or CoIN segment not found above stage.\n"
+            f"  Segments above stage: {up!r}\n"
+            "Fix the result layout or pass --benchmark / --task-id."
         )
 
     benchmark = _benchmark_key_from_dir(bench_folder)
@@ -160,15 +160,17 @@ def find_task(
 ) -> Dict[str, Any]:
     tasks = BENCHMARKS.get(benchmark)
     if not tasks:
-        raise SystemExit(f"未知 benchmark: {benchmark!r}，可用: {list(BENCHMARKS.keys())}")
+        raise SystemExit(f"Unknown benchmark: {benchmark!r}. Valid: {list(BENCHMARKS.keys())}")
 
     if task_id is not None:
         if task_id < 0 or task_id >= len(tasks):
-            raise SystemExit(f"task_id 越界: {task_id}（{benchmark} 共 {len(tasks)} 个任务，下标 0..{len(tasks) - 1}）")
+            raise SystemExit(
+                f"task_id out of range: {task_id} ({benchmark} has {len(tasks)} tasks, indices 0..{len(tasks) - 1})"
+            )
         return dict(tasks[task_id])
 
     if task_name is None:
-        raise SystemExit("未指定任务：请提供路径解析或 --task-name / --task-id")
+        raise SystemExit("No task specified: use path parsing or --task-name / --task-id")
 
     for t in tasks:
         if t["name"] == task_name:
@@ -177,7 +179,7 @@ def find_task(
         if t["name"].lower() == task_name.lower():
             return dict(t)
     names = [t["name"] for t in tasks]
-    raise SystemExit(f"在 benchmark={benchmark!r} 中找不到任务 {task_name!r}。可选: {names}")
+    raise SystemExit(f"Task {task_name!r} not found in benchmark={benchmark!r}. Options: {names}")
 
 
 def resolve_annotation_task(
@@ -185,7 +187,7 @@ def resolve_annotation_task(
     benchmark: str,
     use_sub_dataset: Optional[bool],
 ) -> Dict[str, Any]:
-    """对 UCIT 应用 _sub 路径；use_sub_dataset 为 None 时按文件是否存在自动选择。"""
+    """Apply UCIT _sub paths; if ``use_sub_dataset`` is None, pick by file existence."""
     if benchmark != "ucit":
         return apply_use_sub_dataset_to_task(
             task, use_sub_dataset=False, benchmark=benchmark
@@ -211,7 +213,7 @@ def resolve_annotation_task(
     if isinstance(p_false, str) and os.path.isfile(p_false):
         return t_false
     raise FileNotFoundError(
-        f"找不到评测标注（已尝试 _sub 与非 _sub）：\n  {p_false}\n  {p_true}"
+        f"Eval annotation not found (tried with and without _sub):\n  {p_false}\n  {p_true}"
     )
 
 
@@ -241,7 +243,7 @@ def eval_caption_merge_subset(
     annotation_path: str,
     output_dir: Path,
 ) -> None:
-    """Flickr30k / Vizcap：question_id → image_id，过滤 GT 后走 eval_caption。"""
+    """Flickr30k / Vizcap: question_id → image_id, filter GT, run eval_caption."""
     from backbone.shared.eval.eval_caption import eval_single, merge_captions
 
     with open(annotation_path, "r", encoding="utf-8") as f:
@@ -268,11 +270,11 @@ def eval_caption_merge_subset(
 
     if missing_q:
         print(
-            f"[warn] {len(missing_q)} 条预测的 question_id 未在 COCO images 中找到（示例 {missing_q[:5]}）"
+            f"[warn] {len(missing_q)} predictions have question_id not found in COCO images (sample {missing_q[:5]})"
         )
 
     if not pred_rows:
-        raise SystemExit("没有可用的预测（question_id 均无法对齐到 COCO image）。")
+        raise SystemExit("No usable predictions (no question_id mapped to COCO image).")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     pred_path = output_dir / "pred_coco_type_eval_subset.json"
@@ -290,7 +292,7 @@ def eval_caption_merge_subset(
 
     args = SimpleNamespace(output_dir=str(output_dir))
     eval_single(str(pred_path), str(filtered_ann_path), total, args)
-    print(f"[ok] caption 评测完成 | samples={total} | output_dir={output_dir}")
+    print(f"[ok] caption eval done | samples={total} | output_dir={output_dir}")
 
 
 def eval_ucit_deepseek_style_merge(
@@ -298,12 +300,12 @@ def eval_ucit_deepseek_style_merge(
     annotation_path: str,
     output_dir: Path,
 ) -> None:
-    """ImageNet-R / ArxivQA / IconQA / CLEVR：与 eval_deepseek_r1.eval_single 一致，question_id 统一为 str。"""
+    """ImageNet-R / ArxivQA / IconQA / CLEVR: same as eval_deepseek_r1.eval_single; question_id as str."""
     output_dir.mkdir(parents=True, exist_ok=True)
     with open(annotation_path, "r", encoding="utf-8") as f:
         raw = json.load(f)
     if not isinstance(raw, list):
-        raise SystemExit(f"标注应为 JSON 数组: {annotation_path}")
+        raise SystemExit(f"Annotation must be a JSON array: {annotation_path}")
     annotations = {str(a["question_id"]): a for a in raw}
 
     results: List[Dict[str, Any]] = []
@@ -331,7 +333,7 @@ def eval_ucit_deepseek_style_merge(
         answer_gt_file.append({"pred": pred, "ground_truth": ground_truth})
 
     if missing:
-        print(f"[warn] {missing} 条预测在标注中找不到 question_id")
+        print(f"[warn] {missing} predictions missing question_id in annotations")
 
     ans_gt_file = output_dir / "ans_gt.json"
     with open(ans_gt_file, "w", encoding="utf-8") as f:
@@ -343,7 +345,7 @@ def eval_ucit_deepseek_style_merge(
     result_text = output_dir / "Result.text"
     with open(result_text, "w", encoding="utf-8") as f:
         f.write(summary)
-    print(f"[ok] 已写入 {result_text}")
+    print(f"[ok] wrote {result_text}")
 
 
 def run_eval_unified_subprocess(
@@ -351,10 +353,10 @@ def run_eval_unified_subprocess(
     merge_path: Path,
     output_dir: Path,
 ) -> None:
-    """走 backbone.shared.eval.eval_unified（与 run._run_evaluation 一致）。"""
+    """Run backbone.shared.eval.eval_unified (same as run._run_evaluation)."""
     eval_task = EVAL_TASK_MAP.get(task["name"])
     if eval_task is None:
-        raise SystemExit(f"无评测映射: task name={task['name']!r}")
+        raise SystemExit(f"No eval mapping for task name={task['name']!r}")
 
     cmd = [sys.executable, "-m", "backbone.shared.eval.eval_unified", eval_task]
     if eval_task != "gqa":
@@ -380,27 +382,29 @@ def run_eval_unified_subprocess(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="根据 merge.jsonl 路径解析 benchmark/任务并评测（不推理）")
+    parser = argparse.ArgumentParser(
+        description="Parse benchmark/task from merge.jsonl path and evaluate (no inference)."
+    )
     parser.add_argument(
         "merge_or_dir",
         type=str,
-        help="merge.jsonl 路径，或其所在结果目录（含 .../TaskName/stage/）",
+        help="Path to merge.jsonl or result directory (…/TaskName/stage/).",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
-        help="评测中间产物与 Result.text 输出目录（默认与 merge 同目录）",
+        help="Output dir for artifacts and Result.text (default: same as merge).",
     )
-    parser.add_argument("--benchmark", type=str, default=None, help="ucit / coin，覆盖路径解析")
-    parser.add_argument("--task-name", type=str, default=None, help="任务名，如 Flickr30k（覆盖路径解析）")
-    parser.add_argument("--task-id", type=int, default=None, help="任务下标 0..N-1（与 run train 下标一致）")
+    parser.add_argument("--benchmark", type=str, default=None, help="ucit / coin (override path parse)")
+    parser.add_argument("--task-name", type=str, default=None, help="Task name, e.g. Flickr30k")
+    parser.add_argument("--task-id", type=int, default=None, help="Task index 0..N-1 (same as run train)")
     parser.add_argument(
         "--use-sub-dataset",
         type=str,
         default=None,
         choices=("true", "false", "auto"),
-        help="UCIT 标注是否使用 _sub 后缀；默认 auto 按文件是否存在",
+        help="UCIT: use _sub annotation suffix; default auto by file existence",
     )
 
     args = parser.parse_args()
@@ -425,14 +429,14 @@ def main() -> int:
         benchmark, task_name, stage, _ = parse_result_layout(merge_path)
         task = find_task(benchmark, task_name=task_name)
         print(
-            f"路径解析: benchmark={benchmark} task={task_name!r} stage={stage!r}\n"
+            f"Parsed path: benchmark={benchmark} task={task_name!r} stage={stage!r}\n"
             f"  merge={merge_path}"
         )
     else:
         raise SystemExit(
-            "请任选其一：\n"
-            "  (1) merge 路径符合 .../<BACKBONE>/<UCIT|CoIN>/<method>/<TaskName>/<stage>/merge.jsonl；或\n"
-            "  (2) 显式 --benchmark 与 (--task-id 或 --task-name)。"
+            "Provide either:\n"
+            "  (1) merge path under .../<BACKBONE>/<UCIT|CoIN>/<method>/<TaskName>/<stage>/merge.jsonl, or\n"
+            "  (2) explicit --benchmark and (--task-id or --task-name)."
         )
 
     use_sub: Optional[bool] = None
@@ -446,13 +450,13 @@ def main() -> int:
     task_resolved = resolve_annotation_task(task, benchmark, use_sub)
     ann = task_resolved.get("eval_annotation_path")
     if not ann or not isinstance(ann, str):
-        raise SystemExit("任务配置缺少 eval_annotation_path")
+        raise SystemExit("Task config missing eval_annotation_path")
 
     eval_task = EVAL_TASK_MAP.get(task["name"])
     if eval_task is None:
-        raise SystemExit(f"EVAL_TASK_MAP 未注册: {task['name']!r}")
+        raise SystemExit(f"EVAL_TASK_MAP has no entry for: {task['name']!r}")
 
-    print(f"评测任务: {eval_task} | 标注: {ann}")
+    print(f"Eval task: {eval_task} | annotation: {ann}")
 
     if eval_task in ("flickr30k", "vizcap"):
         eval_caption_merge_subset(merge_path, ann, out_dir)

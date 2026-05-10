@@ -1,7 +1,3 @@
-"""
-MoELoRA：仅注入 PEFT MoELoRA 层并训练，无 SAME 的路由/anchors 等额外逻辑。
-"""
-
 from __future__ import annotations
 
 from typing import Any, List
@@ -54,7 +50,7 @@ class MoeloraIntegration(CLIntegration):
         r = int(getattr(self.config, "lora_r", 64))
         if r % self.task_num != 0:
             raise ValueError(
-                f"lora_r={r} 必须能被 task_num={self.task_num} 整除（MoELoRA 将 rank 按专家切分）。"
+                f"lora_r={r} must be divisible by task_num={self.task_num} (MoELoRA rank split)."
             )
 
         peft_config = MoELoRAConfig(

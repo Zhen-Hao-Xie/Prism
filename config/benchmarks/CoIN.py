@@ -1,7 +1,7 @@
-from ..paths.paths import CHECKPOINT_DIR, INSTRUCTION_DIR, PRETRAIN_MM_PROJECTOR
+from ..paths.llava_paths import CHECKPOINT_DIR, INSTRUCTION_DIR, PRETRAIN_MM_PROJECTOR
 
 
-# CoIN Benchmark 8个任务的配置
+# CoIN benchmark: 8 sequential tasks
 COIN_TASKS = [
     {
         "cur_task": 0,
@@ -12,7 +12,7 @@ COIN_TASKS = [
         "output_dir": f"{CHECKPOINT_DIR}/CoIN/Task0_llava",
         "pretrain_mm_mlp_adapter": f"{PRETRAIN_MM_PROJECTOR}",
         "previous_task": None,
-        # 评估相关配置
+        # Eval subprocess wiring
         "eval": {
             "inference_args": [
                 "--mm-text-select-layer", "-1",
@@ -80,8 +80,8 @@ COIN_TASKS = [
                 "--questions", "testdev_balanced_questions.json",
                 "--predictions", "testdev_balanced_predictions.json",
                 "--scenes", "testdev_balanced_sceneGraphs.json",
-                "--raw-result-file", "{result_file}",  # 改用 raw-result-file
-                # 注意：不要加 --output-dir，因为已经在基础命令中有了
+                "--raw-result-file", "{result_file}",  # GQA expects raw-result-file
+                # Do not duplicate --output-dir (already in base eval command)
             ],
             "needs_conversion": True,
         }

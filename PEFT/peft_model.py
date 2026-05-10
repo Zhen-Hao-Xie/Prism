@@ -130,7 +130,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         if not isinstance(peft_config, PromptLearningConfig):
             self.peft_config[adapter_name] = peft_config
 
-            #!在这里面设置了使用的对应模型
+            # Instantiate tuner model for this peft_type
             self.base_model = PEFT_TYPE_TO_MODEL_MAPPING[peft_config.peft_type](
                 self.base_model, self.peft_config, adapter_name
             )
@@ -411,6 +411,13 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         """
         Prints the number of trainable parameters in the model.
         """
+        try:
+            from utils.rank import is_local_main_process
+
+            if not is_local_main_process():
+                return
+        except ImportError:
+            pass
         trainable_params = 0
         all_param = 0
         for _, param in self.named_parameters():

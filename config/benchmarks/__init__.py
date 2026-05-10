@@ -2,7 +2,7 @@
 from .CoIN import COIN_TASKS
 from .UCIT import UCIT_TASKS
 
-# 可以继续添加其他benchmark
+# Add more benchmarks here if needed.
 # from .other import OTHER_TASKS
 
 BENCHMARKS = {
@@ -10,5 +10,5 @@ BENCHMARKS = {
     "ucit": UCIT_TASKS,
 }
 
-# 与 BENCHMARKS 中任务列表长度一致；
+# Must match task list lengths in BENCHMARKS.
 BENCHMARK_TASK_NUM: dict[str, int] = {name: len(tasks) for name, tasks in BENCHMARKS.items()}

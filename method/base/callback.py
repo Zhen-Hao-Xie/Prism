@@ -1,28 +1,26 @@
 # method/base/callback.py
 from transformers import TrainerCallback
 
+
 class CLTrainerCallback(TrainerCallback):
-    """
-    持续学习训练回调
-    如果模型不是 CLModel，所有方法直接跳过（零开销）
-    """
+    """CL hooks on the training loop; no-op when the model is not a ``CLModel``."""
+
     def __init__(self, model_args, model):
         self.model_args = model_args
-        # 只有包装后的模型才有 integration
         self.integration = getattr(model, 'integration', None)
         self.model = model
-        
+
     def on_step_end(self, args, state, control, model=None, **kwargs):
-        """每个训练步结束后：更新原型/状态"""
+        """After each step: optional prototype / state updates in ``on_step_end``."""
         if self.integration is None:
-            return  # 非 CL 方法直接跳过
+            return
         if model is None:
             model = self.model
         if hasattr(model, 'cl_context'):
             self.integration.on_step_end(model, model.cl_context, kwargs.get('loss'))
-            
+
     def on_train_end(self, args, state, control, model=None, **kwargs):
-        """训练结束时：可选 ``on_train_task_finished``（需 Fisher / trainer），再 ``on_task_end``。"""
+        """End of training: optional ``on_train_task_finished`` then ``on_task_end``."""
         if self.integration is None:
             return
         if model is None:

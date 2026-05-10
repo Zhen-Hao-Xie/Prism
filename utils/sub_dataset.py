@@ -1,15 +1,17 @@
-"""UCIT 等 benchmark：在 JSON 指令路径上自动加/去 ``_sub`` 后缀（见 ``run_config.use_sub_dataset``）。"""
+"""UCIT: add/remove ``_sub`` on JSON instruction paths (see ``run_config.use_sub_dataset``).
+
+Used by ``run.py`` and eval scripts; not model hyperparameters."""
 from __future__ import annotations
 
 import copy
 from typing import Any, Dict
 
-# 任务 dict 中需要处理的字符串路径键（仅对以 .json 结尾且非目录的路径改写）
+# Task dict keys holding JSON file paths (only paths ending in .json are rewritten).
 _TASK_JSON_PATH_KEYS = ("train_data_path", "test_data_path", "eval_annotation_path")
 
 
 def json_path_with_sub_suffix(path: str) -> str:
-    """``.../foo.json`` → ``.../foo_sub.json``；已是 ``*_sub.json`` 则不变。"""
+    """``.../foo.json`` → ``.../foo_sub.json``; unchanged if already ``*_sub.json``."""
     if not path or not isinstance(path, str):
         return path
     if not path.endswith(".json"):
@@ -20,7 +22,7 @@ def json_path_with_sub_suffix(path: str) -> str:
 
 
 def json_path_without_sub_suffix(path: str) -> str:
-    """``.../foo_sub.json`` → ``.../foo.json``；否则不变。"""
+    """``.../foo_sub.json`` → ``.../foo.json``; otherwise unchanged."""
     if not path or not isinstance(path, str):
         return path
     if path.endswith("_sub.json"):
@@ -35,8 +37,8 @@ def apply_use_sub_dataset_to_task(
     benchmark: str,
 ) -> Dict[str, Any]:
     """
-    仅在 ``benchmark == ucit`` 时改写路径（与 CoIN 等全量 json 文件名兼容）。
-    配置文件中应使用**不含** ``_sub`` 的规范名；``use_sub_dataset=True`` 时自动加 ``_sub``。
+    Only when ``benchmark == ucit`` rewrite paths (CoIN etc. keep canonical json names).
+    Config files should use names **without** ``_sub``; with ``use_sub_dataset=True`` append ``_sub``.
     """
     t = copy.deepcopy(task)
     if str(benchmark).strip().lower() != "ucit":

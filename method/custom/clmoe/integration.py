@@ -98,12 +98,7 @@ class ClmoeIntegration(CLIntegration):
 
         r = int(getattr(self.config, "lora_r", 64))
         if r % self.task_num != 0:
-            original_r = r
             r = ((r // self.task_num) + 1) * self.task_num
-            print(
-                f"[CL-MoE] lora_r auto-adjusted from {original_r} to {r} "
-                f"to be divisible by task_num={self.task_num}"
-            )
 
         peft_config = CLMoEConfig(
             target_modules=target_modules,

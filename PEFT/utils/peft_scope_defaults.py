@@ -1,5 +1,5 @@
 """
-各 CL 方法 ``METHOD_CONFIG`` 中共用的 PEFT 路径过滤：与 PEFT 内置 LLaVA 默认集合一致，避免两处漂移。
+Shared PEFT path filters for ``METHOD_CONFIG``: matches PEFT’s built-in LLaVA defaults so definitions stay in sync.
 """
 
 from __future__ import annotations

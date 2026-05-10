@@ -1,19 +1,19 @@
 # -*- encoding: utf-8 -*-
 """
-LLaVA 等多模态模型上 PEFT 的 **路径级** 过滤：按 ``named_modules`` 前缀的分段名跳过某些子树。
+Path-level PEFT filtering on multimodal LLaVA-style models: skip subtrees when any path segment matches.
 
-``exclude_module_path_segments``（见 ``PeftConfig``）语义：
+``exclude_module_path_segments`` (see ``PeftConfig``):
 
-- ``None``：使用本模块内置的 LLaVA 默认集合（CLIP 双塔 + ``mm_projector`` + ``vision_resampler``）。
-- ``[]``：不做路径过滤，仅按各 tuner 的 ``target_modules`` 规则匹配（可注入到 CLIP 等任意子模块）。
-- 非空 ``list``：仅当路径分段中出现列表中的任一名称时跳过（各方法自行配置）。
+- ``None``: built-in LLaVA defaults (CLIP towers + ``mm_projector`` + ``vision_resampler``).
+- ``[]``: no path filtering; only ``target_modules`` rules apply (may inject into CLIP, etc.).
+- Non-empty ``list``: skip when any segment name appears in the module path (per-method policy).
 """
 
 from __future__ import annotations
 
 from typing import FrozenSet, List, Optional, Sequence
 
-# ``LlavaMetaModel`` / ``LlavaLlamaModel`` 下常见、且常与 LLM 子层同名的非解码器分支
+# Common non-decoder branches under ``LlavaMetaModel`` / ``LlavaLlamaModel`` that share names with LM layers
 DEFAULT_LLAVA_EXCLUDE_PATH_SEGMENTS: FrozenSet[str] = frozenset(
     {
         "text_tower",
@@ -26,9 +26,9 @@ DEFAULT_LLAVA_EXCLUDE_PATH_SEGMENTS: FrozenSet[str] = frozenset(
 
 def should_skip_peft_path(module_key: str, exclude_module_path_segments: Optional[Sequence[str]]) -> bool:
     """
-    若应在该 ``module_key`` 上跳过 PEFT 注入，返回 True。
+    Return True if PEFT must not inject under ``module_key``.
 
-    ``exclude_module_path_segments`` 与 ``PeftConfig`` / 训练侧 ``ModelArguments`` 字段对齐。
+    Matches ``PeftConfig.exclude_module_path_segments`` / training ``ModelArguments``.
     """
     if not module_key:
         return False
@@ -43,5 +43,5 @@ def should_skip_peft_path(module_key: str, exclude_module_path_segments: Optiona
 
 
 def should_skip_peft_on_llava_path(module_key: str) -> bool:
-    """兼容旧 API：等价于 ``exclude_module_path_segments is None``（仅 LLaVA 默认排除）。"""
+    """Legacy helper: same as ``exclude_module_path_segments is None`` (LLaVA default skips only)."""
     return should_skip_peft_path(module_key, None)

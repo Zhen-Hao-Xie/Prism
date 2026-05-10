@@ -15,7 +15,7 @@ TRAIN_DEFAULTS = {
     "debug": False,
     # hide_llava, olora, replay_lora, ...
     "method": "ewc",
-    # UCIT：True 时在 train/test/eval 的 *.json 路径上自动加 _sub（config/benchmarks/UCIT.py 中写规范名即可）
+    # UCIT: when True, append _sub to train/test/eval *.json paths (canonical names in config/benchmarks/UCIT.py).
     "use_sub_dataset": True,
 }
 
@@ -40,6 +40,6 @@ INFER_DEFAULTS = {
 Note:
 - Train batch sizes are method-specific: `config/methods/<method>.py` → `TRAIN_BATCH_SIZES`.
 - Structure: benchmark name (`coin` / `ucit`) → task index (same as `run.py train <id>`): CoIN 0–7, UCIT 0–5.
-- 对话模板默认值见 `config/backbones/llava.py` → `DEFAULT_CONV_MODE`；推理可用 `--conv-mode` 覆盖。
-- `use_sub_dataset`：仅对 **ucit** 的 `train_data_path` / `test_data_path` / `eval_annotation_path`（`.json`）在运行时加/去 `_sub`，见 `config/benchmarks/sub_dataset.py`。
+- Default conversation template: `config/backbone/llava.py` → `DEFAULT_CONV_MODE`; override at infer with `--conv-mode`.
+- `use_sub_dataset`: for **ucit** only, runtime add/remove `_sub` on `train_data_path` / `test_data_path` / `eval_annotation_path` (`.json`); see `utils/sub_dataset.py`.
 """

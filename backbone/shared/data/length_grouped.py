@@ -1,4 +1,4 @@
-"""按长度分组的训练采样索引（与 CL 无关）。"""
+"""Length-grouped training sampler (CL-agnostic)."""
 from typing import List, Optional
 
 import torch

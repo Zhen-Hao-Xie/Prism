@@ -14,7 +14,7 @@ from typing import Iterable
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-from config.backbones.llava import BACKBONE_ID, DEFAULT_CONV_MODE
+from config.backbone.llava import BACKBONE_ID, DEFAULT_CONV_MODE
 
 
 def _run_stamp() -> str:
@@ -89,9 +89,9 @@ def _infer_result_dir(
     paths: dict, *, benchmark: str, method: str, task_name: str, stage: str
 ) -> Path:
     """
-    推理/评测结果目录::
+    Inference / eval result directory::
 
-        RESULT_DIR/<BACKBONE_ID>/<Benchmark>/<method>/<数据集任务名>/<stage>/
+        RESULT_DIR/<BACKBONE_ID>/<Benchmark>/<method>/<dataset_task>/<stage>/
     """
     return (
         Path(paths["RESULT_DIR"])
@@ -122,7 +122,7 @@ def _legacy_checkpoint_path(checkpoint_dir: str, benchmark: str, ckpt_name: str)
 
 
 def _resolve_paths() -> dict[str, str]:
-    from config.paths.paths import (  # type: ignore
+    from config.paths.llava_paths import (  # type: ignore
         BASE_MODEL_PATH,
         CLIP_PATH,
         IMAGE_FOLDER,
@@ -144,7 +144,7 @@ def _resolve_paths() -> dict[str, str]:
 def _resolve_method_checkpoint(
     checkpoint_dir: str, benchmark: str, method: str, ckpt_basename: str
 ) -> Path:
-    """优先新目录名 Task{n}_llava，其次同路径下旧名 Task{n}_llava_lora，再尝试无 method 子目录的旧布局。"""
+    """Prefer Task{n}_llava, then Task{n}_llava_lora, then legacy layout without method folder."""
     candidates: list[Path] = []
     primary = _method_checkpoint_path(checkpoint_dir, benchmark, method, ckpt_basename)
     candidates.append(primary)
@@ -313,7 +313,7 @@ def _build_env() -> dict[str, str]:
 
 def _get_task_config(benchmark: str, task_id: int, *, use_sub_dataset: bool) -> dict:
     from config.benchmarks import BENCHMARKS  # type: ignore
-    from config.benchmarks.sub_dataset import apply_use_sub_dataset_to_task  # type: ignore
+    from utils.sub_dataset import apply_use_sub_dataset_to_task  # type: ignore
 
     if benchmark not in BENCHMARKS:
         raise SystemExit(f"Benchmark '{benchmark}' not found. Available: {list(BENCHMARKS.keys())}")
@@ -350,8 +350,8 @@ def _build_train_command(
         paths["DEEPSPEED_CONFIG"],
         "--lora_enable",
         "True",
-        # lora_r / lora_alpha：勿在此写死；由 config/methods/<method>.py 的 METHOD_CONFIG*
-        # 与 load_model_for_train 写入 TrainingArguments（HiDe 要求 lora_r 整除 task_num）
+        # lora_r / lora_alpha come from config/methods/<method>.py METHOD_CONFIG* via load_model_for_train
+        # (HiDe needs lora_r divisible by task_num); do not hard-code here.
         "--mm_projector_lr",
         "2e-5",
         "--benchmark",
@@ -788,7 +788,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
     infer_bs = int(infer_bs)
 
     if str(getattr(args, "method", "") or "").strip().lower() == "zeroshot":
-        # 纯基线：不从 checkpoints/<method>/Task*_llava 解析路径；权重仅来自配置里的 BASE_MODEL_PATH（子进程 --model-base）
+        # Zeroshot: no checkpoint path; weights only from BASE_MODEL_PATH (--model-base)
         model_path = ""
         checkpoint_task = args.checkpoint_task
     elif args.model_path:
@@ -1066,7 +1066,7 @@ def main() -> None:
     p_train.add_argument(
         "--use-sub-dataset",
         action=argparse.BooleanOptionalAction,
-        help="UCIT：为 *.json 数据路径自动加 _sub（默认见 config/run_config.py TRAIN_DEFAULTS）",
+        help="UCIT: append _sub to *.json data paths (default: config/run_config.py TRAIN_DEFAULTS)",
     )
     p_train.set_defaults(**{k: v for k, v in cfg["TRAIN_DEFAULTS"].items() if k != "handler"})
     p_train.set_defaults(train_flag_overrides=cfg["TRAIN_FLAG_OVERRIDES"])
@@ -1093,7 +1093,7 @@ def main() -> None:
     p_infer.add_argument(
         "--use-sub-dataset",
         action=argparse.BooleanOptionalAction,
-        help="UCIT：为 *.json 数据路径自动加 _sub（默认见 config/run_config.py INFER_DEFAULTS）",
+        help="UCIT: append _sub to *.json data paths (default: config/run_config.py INFER_DEFAULTS)",
     )
     p_infer.set_defaults(**{k: v for k, v in cfg["INFER_DEFAULTS"].items() if k != "handler"})
     p_infer.set_defaults(handler=cmd_infer)

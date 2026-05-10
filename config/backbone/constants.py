@@ -1,4 +1,4 @@
-"""跨 backbone 共用的训练/推理常量（占位 token、IGNORE_INDEX、日志目录等）。"""
+"""Shared constants across backbones (placeholder tokens, IGNORE_INDEX, log dir, etc.)."""
 
 CONTROLLER_HEART_BEAT_EXPIRATION = 30
 WORKER_HEART_BEAT_INTERVAL = 15

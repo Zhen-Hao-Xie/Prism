@@ -1,4 +1,3 @@
-"""多 backbone 共用代码占位：训练入口、评测、多模态预处理与 ``model_loading``。
+"""Shared code across backbones: train entry, eval, multimodal preprocessing, ``model_loading``.
 
-当前仓库仍以 LLaVA 为唯一实现；新增 backbone 时可在此包下扩展共用逻辑。
-"""
+This repo currently ships LLaVA only; extend here when adding backbones."""

@@ -5,13 +5,12 @@ from typing import Any, Optional
 
 def merge_method_config_into(obj: Any, method: Optional[str] = None, benchmark: Optional[str] = None) -> None:
     """
-    将 `config/methods/<method>.py` 里的 `METHOD_CONFIG` 写入 obj：
-    - 若存在 ``METHOD_CONFIG_BY_BENCHMARK``，则先合并基准配置，再用 ``benchmark`` 对应子表覆盖同名字段（如不同 bench 的 lora_r）。
-    - 仅当 obj 上不存在该属性，或当前值为 None 时写入（命令行 / 训练脚本显式传入优先）。
-    这样方法专属字段不必出现在共享的 ModelArguments 里。
-    注意：`task_num` / `expert_num` 由 benchmark 决定，见 `merge_benchmark_task_num_into`，此处不再从 METHOD_CONFIG 合并。
+    Merge ``METHOD_CONFIG`` from ``config/methods/<method>.py`` into ``obj``.
+    If ``METHOD_CONFIG_BY_BENCHMARK`` exists, merge base dict then overlay the row for ``benchmark``.
+    Sets only missing attributes or attributes that are None (CLI / script wins).
+    ``task_num`` / ``expert_num`` come from benchmarks via ``merge_benchmark_task_num_into``, not here.
 
-    ``benchmark`` 未传时使用 ``getattr(obj, "benchmark", None)``。
+    ``benchmark`` defaults to ``getattr(obj, "benchmark", None)`` when omitted.
     """
     m = (method or getattr(obj, "method", None) or "").strip().lower()
     if not m or m == "base" or m == "zeroshot":
@@ -42,8 +41,8 @@ def merge_method_config_into(obj: Any, method: Optional[str] = None, benchmark: 
 
 def merge_benchmark_task_num_into(obj: Any, benchmark: Optional[str] = None) -> None:
     """
-    当未显式提供 `task_num`（命令行为 None）时，用 `config.benchmarks.BENCHMARK_TASK_NUM[benchmark]` 填充。
-    显式 `--task_num` 优先，不覆盖。
+    If ``task_num`` is None, set it from ``config.benchmarks.BENCHMARK_TASK_NUM[benchmark]``.
+    Explicit ``--task_num`` is never overwritten.
     """
     if getattr(obj, "task_num", None) is not None:
         return
@@ -81,33 +80,34 @@ class ModelArguments:
     benchmark: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Benchmark：ucit / coin 等；与任务数一致，用于在未传 --task_num 时自动设置 task_num",
+            "help": "Benchmark name (e.g. ucit, coin); used with config/benchmarks to fill task_num when --task_num is omitted.",
         },
     )
     task_num: Optional[int] = field(
         default=None,
         metadata={
-            "help": "持续学习场景下的任务/专家数量；不传时由 --benchmark 对应 config/benchmarks 中的任务数补全",
+            "help": "Number of CL tasks/experts; if omitted, inferred from --benchmark via config/benchmarks.",
         },
     )
     method: str = field(
         default="hide_llava",
-        metadata={"help": "CL method: hide_llava / same / olora / replay_lora / ft_lora / ewc 等"},
+        metadata={"help": "CL method: hide_llava, same, olora, replay_lora, ft_lora, ewc, ..."},
     )
     exclude_module_path_segments: Optional[Any] = field(
         default=None,
         metadata={
-            "help": "PEFT 路径过滤：None=LLaVA 默认跳过 CLIP/mm_projector 等；[]=关闭；非空 list 为自定义跳过分段名。也可写在 config/methods/<method>.py 的 METHOD_CONFIG。",
+            "help": "PEFT path segments to skip: None=LLaVA defaults (CLIP/mm_projector, ...); []=no filter; non-empty list=custom. "
+            "May also be set in config/methods/<method>.py METHOD_CONFIG.",
         },
     )
     peft_target_modules: Any = field(
         default=None,
         metadata={
             "help": (
-                "PEFT 注入位置（``nn.Linear`` 子模块名后缀，对应 LoRA 等 ``target_modules``）："
-                "预设 attention(attn) / ffn(mlp) / linear(all,full)，或 JSON 列表、逗号分隔子模块名；"
-                "见 PEFT/utils/peft_target_modules.py。未设置时与原先行为一致，仅 attention。"
-                "兼容旧名 lora_target_modules（METHOD_CONFIG merge）。",
+                "PEFT target_modules (``nn.Linear`` submodule name suffixes): "
+                "presets attention(attn) / ffn(mlp) / linear(all,full), or JSON list / comma-separated names; "
+                "see PEFT/utils/peft_target_modules.py. Default matches legacy behavior (attention only). "
+                "Alias lora_target_modules is merged from METHOD_CONFIG.",
             ),
         },
     )
@@ -143,7 +143,7 @@ class TrainingArguments(transformers.TrainingArguments):
     
 
 def load_config():
-    """解析命令行参数，返回三个配置对象"""
+    """Parse CLI into (ModelArguments, DataArguments, TrainingArguments)."""
     import sys
 
     for i, arg in enumerate(sys.argv):

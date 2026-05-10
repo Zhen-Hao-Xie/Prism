@@ -22,11 +22,10 @@ def maybe_zero_3(param, ignore_status=False, name=None):
 
 def _is_peft_adapter_param_name(name: str) -> bool:
     """
-    是否为 PEFT 适配器侧参数名。
+    True if ``name`` is a PEFT adapter parameter.
 
-    历史代码仅用 ``\"lora_\" in name``，但 PEFT/HiDe 常见键为 ``lora_A`` / ``lora_B``，
-    其中 **不包含** 子串 ``lora_``（``lora_A`` 在 ``o`` 与 ``A`` 之间无下划线），
-    会导致 HiDe 等保存时 LoRA 张量为空或行为异常。
+    Legacy checks used ``\"lora_\" in name``, but keys like ``lora_A`` / ``lora_B`` do not
+    contain the substring ``lora_``, which could skip tensors and break HiDe saves.
     """
     if "lora_" in name:
         return True
@@ -106,7 +105,7 @@ def safe_save_model_for_hf_trainer(trainer, output_dir):
 
 
 def _save_cl_extra_state(model, output_dir: str):
-    """调用 integration.save_extra_state() 写入方法特有状态（如 HiDe anchors）。"""
+    """Persist method-specific state via ``integration.save_extra_state()`` (e.g. HiDe anchors)."""
     saved = False
 
     if hasattr(model, "_integration") and model._integration is not None:
@@ -116,7 +115,7 @@ def _save_cl_extra_state(model, output_dir: str):
                 if success:
                     saved = True
                 else:
-                    # 基类默认 False：无单独 CL 状态文件属正常
+                    # Base returns False when no extra file; that is OK.
                     saved = True
         except Exception as e:
             logging.exception("save_extra_state failed: %s", e)
@@ -127,8 +126,7 @@ def _save_cl_extra_state(model, output_dir: str):
 
 def _unwrap_for_checkpoint_save(model, trainer):
     """
-    训练结束时 ``model`` 可能是 DDP/DeepSpeed 包装；解包后再解析 CLModel / PeftModel，
-    否则会误判结构并走错保存分支（例如整模 ``model.safetensors``）。
+    Unwrap DDP/DeepSpeed so CLModel / PeftModel layout is detected correctly before save.
     """
     m = model
     if trainer is not None and getattr(trainer, "model", None) is not None:
@@ -157,21 +155,18 @@ def _full_checkpoint_save(trainer, core_model, output_dir: str):
 
 # common/save_checkpoint.py
 def save_model(model, training_args, trainer=None, save_extra_state: bool = True):
-    """统一的模型保存函数"""
+    """Save checkpoint (PEFT adapter or full model) and optional CL extra state."""
     _lr = getattr(training_args, "local_rank", None)
     _lr = -1 if _lr is None else int(_lr)
     _is_main = _lr in (-1, 0)
 
     if _is_main:
-        print(f"\n{'='*70}")
-        print(f"Saving model | output_dir: {training_args.output_dir}")
-        print(f"{'='*70}\n")
+        logging.info("Saving model | output_dir: %s", training_args.output_dir)
 
     os.makedirs(training_args.output_dir, exist_ok=True)
 
     _lora_on = bool(getattr(training_args, "lora_enable", False))
     _core = _unwrap_for_checkpoint_save(model, trainer)
-    # ========== 找到真正的 PEFT 模型（在解包后的核心模块上解析）==========
     save_model = _core
     if hasattr(_core, '_base_model'):
         _base_model = getattr(_core, '_base_model')
@@ -220,17 +215,17 @@ def save_model(model, training_args, trainer=None, save_extra_state: bool = True
             adapter_cfg = os.path.join(training_args.output_dir, "adapter_config.json")
             if not os.path.isfile(adapter_cfg):
                 logging.warning(
-                    "PEFT 保存后未找到 adapter_config.json；请检查 PeftModel.save_pretrained 或 rank0 是否执行保存。"
+                    "adapter_config.json missing after PEFT save; check PeftModel.save_pretrained or rank0 save."
                 )
     else:
         if _lora_on and not _has_peft:
             logging.warning(
-                "lora_enable=True 但当前保存目标无 peft_config（LoRA 可能未注入）；将整模保存。"
+                "lora_enable=True but save target has no peft_config (LoRA may be absent); saving full model."
             )
         _full_checkpoint_save(trainer, _core, training_args.output_dir)
     
     if save_extra_state:
-        # 仅主进程写 CL 额外状态，避免 DeepSpeed 多进程同时读改 adapter_model.safetensors / same_state.bin
+        # Rank 0 only: avoid races on adapter_model.safetensors / same_state.bin under DeepSpeed.
         _lr = getattr(training_args, "local_rank", None)
         if _lr is None:
             _lr = -1
@@ -240,6 +235,4 @@ def save_model(model, training_args, trainer=None, save_extra_state: bool = True
             _save_cl_extra_state(_core, training_args.output_dir)
 
     if _is_main:
-        print(f"\n{'='*70}")
-        print("Model save finished")
-        print(f"{'='*70}\n")
+        logging.info("Model save finished")

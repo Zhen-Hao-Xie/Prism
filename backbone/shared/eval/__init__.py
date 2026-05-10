@@ -1,1 +1,1 @@
-"""统一评测入口与子模块（任务适配器、推理引擎等）。"""
+"""Unified eval entry points (task adapters, inference engine, etc.)."""

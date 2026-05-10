@@ -1,11 +1,3 @@
-"""
-DISCO 方法实现
-基于 CLIP 原型匹配的软路由 + Disco MOE-LoRA (lora_AB diagonal mask)
-
-与 HiDe-LLaVA 的关键区别:
-  - 推理: softmax 软路由（所有 expert 加权组合）而非 argmax 硬路由
-  - PEFT 层: DiscoMOELoraLinear 使用 lora_AB 对角掩码实现软加权
-"""
 from method.base.integration import CLIntegration
 from method.base.context import CLContext
 from method.base.hooks import HookManager
@@ -42,7 +34,6 @@ def ensure_peft_extension_registered() -> None:
 
 @CLMethodFactory.register("disco")
 class DiscoIntegration(CLIntegration):
-    """DISCO 集成类 — 实现基于 CLIP 原型的软路由逻辑"""
 
     def __init__(self, config: Any):
         super().__init__(config)
@@ -52,44 +43,28 @@ class DiscoIntegration(CLIntegration):
         self.feature_dim = int(getattr(config, "clip_feature_dim", 768))
         self.routing_temperature = float(getattr(config, "routing_temperature", 0.05))
 
-        # Prototype storage
         self.image_anchors: Optional[torch.nn.ParameterList] = None
         self.text_anchors: Optional[torch.nn.ParameterList] = None
         self.image_boundary: Optional[torch.nn.ParameterList] = None
         self.text_boundary: Optional[torch.nn.ParameterList] = None
 
-    # ========================================================================
-    #  initialize_model
-    # ========================================================================
-
     def initialize_model(self, model):
         device = next(model.parameters()).device
 
-        # 1. Freeze all backbone parameters
         for name, param in model.named_parameters():
             param.requires_grad = False
 
-        print(f"\n{'='*70}")
-        print("[DISCO] initialize_model start")
-
-        # 2. Initialize anchors (prototypes)
         if self.image_anchors is None:
             self.image_anchors = torch.nn.ParameterList([
                 torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False)
                 for _ in range(self.task_num)
             ]).to(device)
-            print("  image_anchors initialized (random)")
-        else:
-            print("  image_anchors already present (from checkpoint)")
 
         if self.text_anchors is None:
             self.text_anchors = torch.nn.ParameterList([
                 torch.nn.Parameter(0.1 * torch.randn(1, self.feature_dim), requires_grad=False)
                 for _ in range(self.task_num)
             ]).to(device)
-            print("  text_anchors initialized (random)")
-        else:
-            print("  text_anchors already present (from checkpoint)")
 
         if self.image_boundary is None:
             self.image_boundary = torch.nn.ParameterList([
@@ -103,50 +78,33 @@ class DiscoIntegration(CLIntegration):
                 for _ in range(self.task_num)
             ]).to(device)
 
-        # 3. Attach to model
         model.image_anchors = self.image_anchors
         model.text_anchors = self.text_anchors
         model.image_boundary = self.image_boundary
         model.text_boundary = self.text_boundary
         model.task_num = self.task_num
 
-        # 4. Setup Disco MOE-LoRA
         self._setup_disco_lora(model)
 
-        # 5. Re-freeze anchors (PEFT may have touched requires_grad)
         for name, param in model.named_parameters():
             if any(p in name for p in ['image_anchors', 'text_anchors', 'image_boundary', 'text_boundary']):
                 param.requires_grad = False
 
-        # 6. Log
-        total_params = sum(p.numel() for p in model.parameters())
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"\n[DISCO] total params: {total_params:,}")
-        print(f"[DISCO] trainable params: {trainable_params:,} ({trainable_params/total_params*100:.4f}%)")
-        print(f"{'='*70}\n")
-        print(f"DISCO init done | tasks: {self.task_num} | feature_dim: {self.feature_dim}")
-
     def _setup_disco_lora(self, model):
-        """Configure Disco MOE-LoRA."""
         try:
             ensure_peft_extension_registered()
             from PEFT.tuners.custom.disco import DiscoMOELoraConfig
             from PEFT import get_peft_model
 
             target_modules = self._find_target_modules(model)
-            print(f"    target modules found: {len(target_modules)}")
 
-            # Ensure lora_r is divisible by expert_num
             raw_r = int(getattr(self.config, 'lora_r', 64))
             if raw_r % self.task_num != 0:
                 adjusted_r = ((raw_r // self.task_num) + 1) * self.task_num
-                print(f"    adjusting lora_r: {raw_r} -> {adjusted_r} (multiple of {self.task_num})")
             else:
                 adjusted_r = raw_r
 
-            # Match original DISCO: lora_alpha = RANK * 2
             lora_alpha = adjusted_r * 2
-            print(f"    lora_alpha = {lora_alpha} (scaling = {lora_alpha}/{adjusted_r} = {lora_alpha/adjusted_r:.2f})")
 
             lora_config = DiscoMOELoraConfig(
                 target_modules=target_modules,
@@ -161,23 +119,17 @@ class DiscoIntegration(CLIntegration):
 
             _base_model = getattr(model, '_base_model', None)
             if _base_model is not None:
-                print("    applying PEFT to _base_model...")
                 peft_model = get_peft_model(_base_model, lora_config)
                 object.__setattr__(model, '_base_model', peft_model)
             else:
-                print("    applying PEFT to model directly...")
                 peft_model = get_peft_model(model, lora_config)
 
             if hasattr(peft_model, 'print_trainable_parameters'):
                 peft_model.print_trainable_parameters()
-
-            print("  Disco MOE-LoRA configured")
         except ImportError as e:
-            print(f"  DiscoMOELoraConfig not available: {e}")
+            raise RuntimeError("DiscoMOELoraConfig not available") from e
         except Exception as e:
-            print(f"  LoRA config failed: {e}")
-            import traceback
-            traceback.print_exc()
+            raise RuntimeError("Disco LoRA setup failed") from e
 
     def _find_target_modules(self, model) -> List[str]:
         target_modules = set()
@@ -190,12 +142,7 @@ class DiscoIntegration(CLIntegration):
                                             'gate_proj', 'up_proj', 'down_proj']):
                     module_type = name.split('.')[-1]
                     target_modules.add(module_type)
-        print(f"    target module types: {list(target_modules)}")
         return list(target_modules)
-
-    # ========================================================================
-    #  on_input_prep  — 核心路由
-    # ========================================================================
 
     def on_input_prep(self, model, args, kwargs, context: CLContext):
         images = kwargs.get('images', None)
@@ -203,7 +150,6 @@ class DiscoIntegration(CLIntegration):
 
         clip_tokenizer, text_tower = self._resolve_clip_components(model)
         if clip_tokenizer is None or text_tower is None:
-            print("[DISCO] skip routing: clip_tokenizer or text_tower missing")
             return
 
         if images is None:
@@ -223,10 +169,6 @@ class DiscoIntegration(CLIntegration):
         else:
             cos_sim_list = self._compute_soft_routing(image_feat, text_feat)
             self._propagate_mask_signal(model, cos_sim_list)
-
-    # ========================================================================
-    #  Feature extraction
-    # ========================================================================
 
     def _resolve_clip_components(self, model):
         clip_tokenizer = getattr(model, 'clip_tokenizer', None)
@@ -249,7 +191,6 @@ class DiscoIntegration(CLIntegration):
     def _extract_clip_features(self, model, images, input_ids, clip_tokenizer, text_tower):
         device = images.device
 
-        # Image features
         vision_tower = getattr(model, 'vision_tower', None)
         if vision_tower and hasattr(vision_tower, 'is_loaded') and vision_tower.is_loaded:
             with torch.no_grad():
@@ -265,7 +206,6 @@ class DiscoIntegration(CLIntegration):
         else:
             image_guide_features = torch.zeros(images.shape[0], self.feature_dim, device=device)
 
-        # Text features
         if input_ids is not None and clip_tokenizer is not None:
             main_tokenizer = getattr(model, 'tokenizer', None)
             if main_tokenizer is None:
@@ -307,10 +247,6 @@ class DiscoIntegration(CLIntegration):
 
         return image_guide_features, text_guide_features
 
-    # ========================================================================
-    #  Prototype update (training)
-    # ========================================================================
-
     def _update_prototypes(self, image_feat, text_feat, task_id):
         if task_id is None or task_id >= self.task_num:
             return
@@ -320,7 +256,6 @@ class DiscoIntegration(CLIntegration):
 
         task_idx = int(task_id)
         with torch.no_grad():
-            # Image prototype
             old_img_anchor = self.image_anchors[task_idx].data.clone()
             old_img_count = self.image_boundary[task_idx].data.clone()
             image_sum = old_img_anchor * old_img_count + image_feat.sum(dim=0)
@@ -330,7 +265,6 @@ class DiscoIntegration(CLIntegration):
             self.image_anchors[task_idx].requires_grad = False
             self.image_boundary[task_idx].requires_grad = False
 
-            # Text prototype
             old_txt_anchor = self.text_anchors[task_idx].data.clone()
             old_txt_count = self.text_boundary[task_idx].data.clone()
             text_sum = old_txt_anchor * old_txt_count + text_feat.sum(dim=0)
@@ -340,45 +274,29 @@ class DiscoIntegration(CLIntegration):
             self.text_anchors[task_idx].requires_grad = False
             self.text_boundary[task_idx].requires_grad = False
 
-    # ========================================================================
-    #  Soft routing (inference) — the key difference from HiDe
-    # ========================================================================
-
     def _compute_soft_routing(self, image_feat, text_feat):
-        image_feat_mean = image_feat.mean(dim=0, keepdim=True)
         text_feat_mean = text_feat.mean(dim=0, keepdim=True)
 
-        global_image = torch.stack([p for p in self.image_anchors]).squeeze(1)
-        global_text = torch.stack([p for p in self.text_anchors]).squeeze(1)
-
-        cos_sim = F.cosine_similarity(global_text, text_feat_mean, dim=1)
+        cos_sim = F.cosine_similarity(
+            torch.stack([p for p in self.text_anchors]).squeeze(1),
+            text_feat_mean,
+            dim=1,
+        )
         cos_sim = cos_sim[:self.task_num]
 
         cos_sim_softmax = F.softmax(cos_sim / self.routing_temperature, dim=0)
 
-        sim_list = cos_sim_softmax.tolist()
-        print(f"    DISCO soft routing: {[f'{s:.4f}' for s in sim_list]}")
-        return sim_list
+        return cos_sim_softmax.tolist()
 
     def _propagate_mask_signal(self, model, cos_sim_list):
-        """Write soft routing weights into mask_signal on every DiscoMOELoraLinear layer."""
-        count = 0
         for module in model.modules():
             if module.__class__.__name__ == 'DiscoMOELoraLinear':
                 module.mask_signal = cos_sim_list
-                count += 1
-        if count > 0:
-            print(f"    mask_signal propagated to {count} DiscoMOELoraLinear layers")
 
     def _set_lora_id_on_layers(self, model, task_id):
-        """Training: set lora_id on every DiscoMOELoraLinear layer to select correct expert."""
         for module in model.modules():
             if module.__class__.__name__ == 'DiscoMOELoraLinear':
                 module.lora_id = task_id
-
-    # ========================================================================
-    #  Text-only routing
-    # ========================================================================
 
     def _text_only_routing(self, model, input_ids, clip_tokenizer, text_tower):
         if input_ids is None or input_ids.shape[1] <= 1:
@@ -410,12 +328,7 @@ class DiscoIntegration(CLIntegration):
         cos_sim_softmax = F.softmax(cos_sim / self.routing_temperature, dim=0)
 
         sim_list = cos_sim_softmax.tolist()
-        print(f"    Text-only soft routing: {[f'{s:.4f}' for s in sim_list]}")
         self._propagate_mask_signal(model, sim_list)
-
-    # ========================================================================
-    #  Remaining hooks
-    # ========================================================================
 
     def on_forward_start(self, model, context: CLContext):
         pass
@@ -424,7 +337,7 @@ class DiscoIntegration(CLIntegration):
         return outputs
 
     def on_task_end(self, model, context: CLContext, task_id: int):
-        print(f"[DISCO] task {task_id} finished")
+        pass
 
     def get_inference_config(self) -> Dict:
         return {
@@ -433,13 +346,8 @@ class DiscoIntegration(CLIntegration):
             "routing_temperature": self.routing_temperature,
         }
 
-    # ========================================================================
-    #  Save / Load extra state
-    # ========================================================================
-
     def save_extra_state(self, output_dir: str, model=None) -> bool:
         os.makedirs(output_dir, exist_ok=True)
-        print(f"[DISCO] saving extra state to {output_dir}...")
 
         state = {}
         if self.image_anchors is not None:
@@ -457,17 +365,14 @@ class DiscoIntegration(CLIntegration):
         if state:
             save_path = os.path.join(output_dir, 'disco_state.pt')
             torch.save(state, save_path)
-            print(f"  saved: {save_path} ({os.path.getsize(save_path)/1024:.1f} KB)")
             return True
         return False
 
     def load_extra_state(self, load_dir: str, model=None) -> bool:
         load_path = os.path.join(load_dir, 'disco_state.pt')
         if not os.path.exists(load_path):
-            print(f"[DISCO] state file not found: {load_path}")
             return False
 
-        print(f"[DISCO] loading extra state from {load_path}...")
         state = torch.load(load_path, map_location='cpu')
 
         if 'image_anchors' in state and self.image_anchors is not None:
@@ -487,7 +392,6 @@ class DiscoIntegration(CLIntegration):
                 if i < len(self.text_boundary):
                     self.text_boundary[i].data.copy_(p)
 
-        # Attach to model
         if model is not None:
             if self.image_anchors is not None:
                 object.__setattr__(model, 'image_anchors', self.image_anchors)
@@ -498,11 +402,9 @@ class DiscoIntegration(CLIntegration):
             if self.text_boundary is not None:
                 object.__setattr__(model, 'text_boundary', self.text_boundary)
 
-        print(f"[DISCO] state loaded from {load_path}")
         return True
 
     def pre_generate_hook(self, model, input_ids, images, context) -> bool:
-        """Hook before generate(): predict task and set routing."""
         if images is None:
             task_id = context.task_id if context and context.task_id is not None else 0
             self._set_lora_id_on_layers(model, task_id)

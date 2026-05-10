@@ -13,7 +13,6 @@ from transformers.trainer import (
 )
 from typing import Any, Dict, Optional
 
-# 从 common 导入已解耦的功能
 from common.save_checkpoint import get_mm_adapter_state_maybe_zero_3
 from backbone.shared.data import LengthGroupedSampler
 
@@ -21,7 +20,7 @@ from backbone.shared.data import LengthGroupedSampler
 class LLaVATrainer(Trainer):
 
     def training_step(self, model: nn.Module, inputs: Dict[str, Any]) -> torch.Tensor:
-        """在 backward 之后调用 ``CLIntegration.on_training_batch_end``（含梯度累积下每个 micro-batch）。"""
+        """After backward: ``CLIntegration.on_training_batch_end`` (each micro-batch under gradient accumulation)."""
         loss = super().training_step(model, inputs)
         self._dispatch_cl_on_training_batch_end(model, inputs, loss)
         return loss
@@ -75,15 +74,15 @@ class LLaVATrainer(Trainer):
 
         opt_model = self.model
 
-        # 获取需要衰减的参数
+        # Params that use weight decay
         decay_parameters = get_parameter_names(opt_model, ALL_LAYERNORM_LAYERS)
         decay_parameters = [name for name in decay_parameters if "bias" not in name]
 
-        # 如果设置了 mm_projector 单独的学习率
+        # Optional separate LR for mm_projector
         if self.args.mm_projector_lr is not None:
             projector_parameters = [name for name, _ in opt_model.named_parameters() if "mm_projector" in name]
             optimizer_grouped_parameters = [
-                # 非 projector 参数（衰减）
+                # Non-projector (decay)
                 {
                     "params": [
                         p for n, p in opt_model.named_parameters()
@@ -91,7 +90,7 @@ class LLaVATrainer(Trainer):
                     ],
                     "weight_decay": self.args.weight_decay,
                 },
-                # 非 projector 参数（不衰减）
+                # Non-projector (no decay)
                 {
                     "params": [
                         p for n, p in opt_model.named_parameters()
@@ -99,7 +98,7 @@ class LLaVATrainer(Trainer):
                     ],
                     "weight_decay": 0.0,
                 },
-                # projector 参数（衰减）- 使用单独的学习率
+                # Projector (decay) with mm_projector_lr
                 {
                     "params": [
                         p for n, p in opt_model.named_parameters()
@@ -108,7 +107,7 @@ class LLaVATrainer(Trainer):
                     "weight_decay": self.args.weight_decay,
                     "lr": self.args.mm_projector_lr,
                 },
-                # projector 参数（不衰减）- 使用单独的学习率
+                # Projector (no decay) with mm_projector_lr
                 {
                     "params": [
                         p for n, p in opt_model.named_parameters()
@@ -119,7 +118,7 @@ class LLaVATrainer(Trainer):
                 },
             ]
         else:
-            # 标准分组
+            # Standard decay / no-decay groups
             optimizer_grouped_parameters = [
                 {
                     "params": [
@@ -145,7 +144,7 @@ class LLaVATrainer(Trainer):
 
         optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
 
-        # 处理 ShardedDDP
+        # ShardedDDP path
         if self.sharded_ddp == ShardedDDPOption.SIMPLE:
             from torch.distributed.optim import ZeroRedundancyOptimizer
             self.optimizer = ZeroRedundancyOptimizer(
@@ -156,7 +155,7 @@ class LLaVATrainer(Trainer):
         else:
             self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
 
-            # 特殊处理 Adam8bit（可选，可考虑移至 common）
+            # Adam8bit: optional fp32 embedding overrides (could move to common)
             if optimizer_cls.__name__ == "Adam8bit":
                 import bitsandbytes
                 manager = bitsandbytes.optim.GlobalOptimManager.get_instance()

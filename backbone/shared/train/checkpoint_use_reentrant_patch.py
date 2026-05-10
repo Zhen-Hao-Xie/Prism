@@ -1,11 +1,11 @@
-"""对 ``torch.utils.checkpoint.checkpoint`` 默认传入 ``use_reentrant=False``。
+"""Patch ``torch.utils.checkpoint.checkpoint`` to default ``use_reentrant=False``.
 
-Transformers LLaMA 在 ``gradient_checkpointing`` 下调用 HuggingFace 内建的 checkpoint，
-默认 ``use_reentrant=True`` 会在分段反向里再次走过同一批参数；DeepSpeed ZeRO Stage 2
-在梯度钩子里「归约一次即标记完成」，易触发 ``already been reduced``。
+Transformers LLaMA with gradient checkpointing uses HF checkpoint with ``use_reentrant=True`` by default,
+which can re-enter the same params during segmented backward; DeepSpeed ZeRO-2 may then hit
+``already been reduced`` on hooks.
 
-``use_reentrant=False`` 走另一套分段反向实现，通常不再以相同方式嵌套触发二次钩子。
-旧版 PyTorch 不支持该关键字时自动回退。"""
+``use_reentrant=False`` uses a different backward path and usually avoids that nesting.
+Falls back automatically on older PyTorch without the keyword."""
 
 from __future__ import annotations
 

@@ -1,13 +1,13 @@
 """
-replay_lora：标准 LoRA（默认 attention+FFN）+ 任务分区经验回放。
+replay_lora: standard LoRA (default attention+FFN) + task-partitioned experience replay.
 
-回放超参见 ``METHOD_CONFIG``：
+Replay hyperparameters in ``METHOD_CONFIG``:
 
-- ``replay_buffer_size``：总容量目标（按 ``task_num-1`` 槽均分上限）。
-- ``replay_sample_prob``：对每个 **当前 batch 中的样本**（``cl_raw_example``）独立伯努利，决定是否写入 buffer；
-  重写 ``Replay_loraIntegration.should_store_training_example`` 可按特征/loss 等自定义（见 ``method/base/integration.py`` 默认接口）。
+- ``replay_buffer_size``: total capacity target (slots split across ``task_num-1`` tasks).
+- ``replay_sample_prob``: per-sample Bernoulli on each **current-batch** row (``cl_raw_example``) for buffer writes;
+  override ``Replay_loraIntegration.should_store_training_example`` for custom policies (see ``method/base/integration.py``).
 
-``peft_target_modules`` 默认 ``attn_and_ffn``（见 ``PEFT/utils/peft_target_modules.py``）。
+``peft_target_modules`` defaults to ``attn_and_ffn`` (see ``PEFT/utils/peft_target_modules.py``).
 """
 
 from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION

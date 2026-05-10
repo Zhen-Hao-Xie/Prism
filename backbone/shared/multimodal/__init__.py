@@ -1,1 +1,1 @@
-"""多模态对话模板、预处理与生成辅助（与具体 CL 方法无关）。"""
+"""Multimodal templates, preprocessing, generation helpers (CL-agnostic)."""

@@ -1,8 +1,3 @@
-"""特化的 ``CLIntegration`` 实现：CLIP 路由 / 原型（``RouterIntegration``）与 Prompt 类方法（``PromptIntegration``）。
-
-合并原 ``method/base/router.py`` 与 ``method/base/prompt.py``，共享 safetensors 合并等工具函数。
-"""
-
 from __future__ import annotations
 
 import os
@@ -17,7 +12,6 @@ from config.backbone.llava import CLIP_FEATURE_DIM
 from method.base.context import CLContext
 from method.base.integration import CLIntegration
 
-# checkpoint 中上一 batch 混合向量的新键名；旧 checkpoint 仍可能含 ``_last_routing``
 _PRIOR_VEC_KEY = "_prior_expert_vec"
 _LEGACY_PRIOR_KEY = "_last_routing"
 
@@ -28,11 +22,6 @@ def merge_tensor_bundles(
     *,
     on_duplicate_key: Literal["raise", "prefer_first", "prefer_second"] = "raise",
 ) -> Dict[str, torch.Tensor]:
-    """
-    合并两个「字符串键 → torch.Tensor」映射（与 safetensors / PEFT state_dict 条目形式一致）。
-
-    供 Router/SAME 将方法侧张量并入 ``adapter_model.safetensors`` 时使用。
-    """
     dup = set(first) & set(second)
     if dup and on_duplicate_key == "raise":
         sample = sorted(dup)[:32]
@@ -54,12 +43,6 @@ def read_merge_write_safetensors(
     *,
     on_duplicate_key: Literal["raise", "prefer_first", "prefer_second"] = "prefer_second",
 ) -> bool:
-    """
-    读取已有 ``.safetensors``，与 ``extra`` 合并后写回同一路径。
-
-    Returns:
-        文件存在且成功写回则为 True；路径不存在或 ``extra`` 为空则 False。
-    """
     if not extra:
         return False
     if not os.path.isfile(safetensors_path):
@@ -72,9 +55,45 @@ def read_merge_write_safetensors(
     save_file(merged, safetensors_path)
     return True
 
+class PromptIntegration(CLIntegration):
+
+    def __init__(self, config: Any):
+        super().__init__(config)
+        self.num_prompt_tokens: int = int(getattr(config, "num_prompt_tokens", 8))
+        self.virtual_tokens: Optional[int] = getattr(config, "virtual_tokens", None)
+        if self.virtual_tokens is not None:
+            self.virtual_tokens = int(self.virtual_tokens)
+
+    def initialize_model(self, model: nn.Module) -> None:
+        return
+
+    def on_input_prep(
+        self,
+        model: nn.Module,
+        args: tuple,
+        kwargs: dict,
+        context: CLContext,
+    ) -> None:
+        return
+
+    def on_forward_start(self, model: nn.Module, context: CLContext) -> None:
+        return
+
+    def on_forward_end(self, model: nn.Module, outputs: Any, context: CLContext) -> Any:
+        return outputs
+
+    def on_task_end(self, model: nn.Module, context: CLContext, task_id: int) -> None:
+        return
+
+    def get_inference_config(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "num_prompt_tokens": self.num_prompt_tokens,
+        }
+        if self.virtual_tokens is not None:
+            out["virtual_tokens"] = self.virtual_tokens
+        return out
 
 class RouterIntegration(CLIntegration):
-    # 并入 ``adapter_model.safetensors`` 的键前缀；与 LoRA 参数名不重叠
     _MCITBOX_SAME_PREFIX = "mcitbox.same."
 
     def __init__(self, config: Any):
@@ -112,7 +131,6 @@ class RouterIntegration(CLIntegration):
         *,
         on_duplicate_key: Literal["raise", "prefer_first", "prefer_second"] = "prefer_second",
     ) -> bool:
-        """将 ``extra`` 并入 ``output_dir/adapter_model.safetensors``（若文件已存在）。"""
         st_path = os.path.join(output_dir, "adapter_model.safetensors")
         return read_merge_write_safetensors(
             st_path, extra, on_duplicate_key=on_duplicate_key
@@ -312,7 +330,6 @@ class RouterIntegration(CLIntegration):
 
     def _write_expert_mix_to_modules(self, model: Any, mix: torch.Tensor) -> None:
         mix = mix.detach()
-        print(f"expert mix: {mix} ")
         target = self.peft_expert_layer_name
         for module in model.modules():
             if module.__class__.__name__ != target:
@@ -351,7 +368,6 @@ class RouterIntegration(CLIntegration):
         if self._prior_expert_vec is not None:
             t = self._prior_expert_vec.detach().cpu().contiguous().clone()
             out[_PRIOR_VEC_KEY] = t
-            # 独立副本：避免与 _PRIOR_VEC_KEY 共存储，safetensors 合并写入时不报 shared memory
             out[_LEGACY_PRIOR_KEY] = t.clone()
         return out
 
@@ -461,40 +477,7 @@ class RouterIntegration(CLIntegration):
     def print_carryover_restore_summary(
         self, path: str, state: Dict[str, Any], tag: str = "[Router]"
     ) -> None:
-        anchor_keys = ("image_anchors", "text_anchors", "image_boundary", "text_boundary")
-        keys_in_file = [k for k in anchor_keys if k in state]
-        nonempty_in_file = any(
-            k in state and isinstance(state[k], (list, tuple)) and len(state[k]) > 0 for k in anchor_keys
-        )
-
-        print(f"\n{tag} state restored from: {path}")
-        print(f"  anchor keys in file: {keys_in_file if keys_in_file else '(none)'}")
-
-        if self.image_anchors is not None:
-            print("  image_anchors (L2 norm):")
-            for i, p in enumerate(self.image_anchors):
-                n = float(p.detach().float().norm().item())
-                print(f"    slot {i}: {n:.4f}")
-        if self.text_anchors is not None:
-            print("  text_anchors (L2 norm):")
-            for i, p in enumerate(self.text_anchors):
-                n = float(p.detach().float().norm().item())
-                print(f"    slot {i}: {n:.4f}")
-        if self.image_boundary is not None:
-            print("  image_boundary:")
-            for i, p in enumerate(self.image_boundary):
-                print(f"    slot {i}: {float(p.detach().item()):.4f}")
-        if self.text_boundary is not None:
-            print("  text_boundary:")
-            for i, p in enumerate(self.text_boundary):
-                print(f"    slot {i}: {float(p.detach().item()):.4f}")
-        if nonempty_in_file:
-            print("  Anchor tensors from file merged into integration.")
-        else:
-            print(
-                "  No anchor tensors in file; values above are defaults "
-                "(re-save after training if needed)."
-            )
+        pass
 
     def save_carryover_file(self, output_dir: str, filename: str = "carryover_state.bin") -> bool:
         os.makedirs(output_dir, exist_ok=True)
@@ -519,51 +502,3 @@ class RouterIntegration(CLIntegration):
         return ok
 
 
-class PromptIntegration(CLIntegration):
-    """Prompt 类方法的 Integration 基类（无 Router 侧混合与锚点）。
-
-    参照同文件中 ``RouterIntegration`` 的组织方式：从 ``config`` 读取方法字段、
-    可选地将额外张量并入 ``adapter_model.safetensors``，并实现完整的 ``CLIntegration`` 生命周期。
-    与 ``RouterIntegration`` 不同，本类**不包含** CLIP 路由、专家混合向量、原型锚点等多任务路由逻辑，
-    适用于纯 PEFT Prompt / Prefix / P-Tuning 等「在前缀空间学习」的方法；具体 PEFT 注册应在子类的
-    ``initialize_model`` 中完成。
-    """
-
-    def __init__(self, config: Any):
-        super().__init__(config)
-        # 常见 prompt 配置（子类或 ``config/methods/<name>.py`` 可按需提供）
-        self.num_prompt_tokens: int = int(getattr(config, "num_prompt_tokens", 8))
-        self.virtual_tokens: Optional[int] = getattr(config, "virtual_tokens", None)
-        if self.virtual_tokens is not None:
-            self.virtual_tokens = int(self.virtual_tokens)
-
-    def initialize_model(self, model: nn.Module) -> None:
-        """默认仅占位；子类在此注册 Prompt / Prefix PEFT 等。"""
-        return
-
-    def on_input_prep(
-        self,
-        model: nn.Module,
-        args: tuple,
-        kwargs: dict,
-        context: CLContext,
-    ) -> None:
-        return
-
-    def on_forward_start(self, model: nn.Module, context: CLContext) -> None:
-        return
-
-    def on_forward_end(self, model: nn.Module, outputs: Any, context: CLContext) -> Any:
-        return outputs
-
-    def on_task_end(self, model: nn.Module, context: CLContext, task_id: int) -> None:
-        return
-
-    def get_inference_config(self) -> Dict[str, Any]:
-        """导出与推理对齐的轻量配置（子类可扩展）。"""
-        out: Dict[str, Any] = {
-            "num_prompt_tokens": self.num_prompt_tokens,
-        }
-        if self.virtual_tokens is not None:
-            out["virtual_tokens"] = self.virtual_tokens
-        return out

@@ -40,7 +40,7 @@ class SAMEConfig(LoraConfig):
     curvature_mu: float = field(default=0.9)
     window_size: int = field(default=3)
     max_components: int = field(default=64)
-    # 谱/协方差主方向选择：保留累积能量达到该比例的前若干奇异方向（router hook 与曲率 hook 共用）
+    # Spectral / covariance principal directions: keep dirs until cumulative energy reaches this ratio (router + curvature hooks)
     cumulative_energy_ratio: float = field(default=0.9)
 
     def __post_init__(self):
@@ -372,14 +372,14 @@ class SAMELinear(nn.Linear, SAMELayer):
         if total_energy == 0:
             return grad
         
-        # 计算累积能量占比
+        # Cumulative energy ratio along singular values
         cumsum = torch.cumsum(energy, dim=0)
         ratio = cumsum / total_energy
         
-        # 保留累积能量达到 cumulative_energy_ratio 的方向
+        # Keep principal directions until cumulative_energy_ratio
         thr = self.cumulative_energy_ratio
         k = (ratio <= thr).sum().item() + 1
-        k = min(k, len(S))  # 确保不越界
+        k = min(k, len(S))  # clamp
         
         if k == 0:
             return grad
@@ -387,7 +387,7 @@ class SAMELinear(nn.Linear, SAMELayer):
         V_parallel = U[:, :k] 
         grad_parallel = grad @ V_parallel @ V_parallel.t()
 
-        # 按奇异值从大到小累加能量
+        # Smooth singular values in a sliding window
         S_smooth = torch.zeros_like(S[:k])
         for i in range(k):
             start = max(0, i - self.window_size + 1)
@@ -405,7 +405,7 @@ class SAMELinear(nn.Linear, SAMELayer):
         return grad_parallel_scaled + grad_perp
     
     # def _make_curvature_hook(self, name, expert_id, adapter):
-    #     """正交投影到零空间：Lu et al. (AAAI-25) Consistent MoE Prompt"""
+    #     """Orthogonal projection to nullspace (Lu et al., Consistent MoE Prompt)"""
     #     def hook(grad):
     #         if not self.training or self.cur_task == 0:
     #             return grad
@@ -416,41 +416,41 @@ class SAMELinear(nn.Linear, SAMELayer):
     #             return grad
 
     #         device = grad.device
-    #         # U_prev: 协方差矩阵的特征向量 (对应论文中的 V), S_prev: 特征值 (对应奇异值平方)
+    #         # U_prev: eigvecs of covariance (paper V); S_prev: eigenvalues (sing.val^2)
     #         U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
     #         S_prev = getattr(self, f"cov_S_prev_{adapter}").to(device)
             
     #         # Paper method: singular-value threshold for null space (not energy ratio)
-    #         # 找出非零奇异值的最小值
+    #         # Smallest nonzero singular value
     #         nonzero_mask = S_prev > 1e-8 * S_prev.max()
     #         if nonzero_mask.sum() == 0:
     #             return grad
     #         lambda_min = S_prev[nonzero_mask].min()
             
-    #         # 零空间判定阈值 (alpha 通常设为 1e-3)
+    #         # Null-space threshold (alpha often 1e-3)
     #         alpha = 1e-3
     #         null_mask = S_prev < (alpha * lambda_min)
             
-    #         # 获取零空间基向量 V_null (对应论文中的 \tilde{V})
+    #         # Null-space basis V_null (paper \tilde{V})
     #         U_null = U_prev[:, null_mask]
             
     #         if U_null.size(1) == 0:
     #             return grad
             
     #         # Projection matrix H = V_null @ V_null.T (paper Eq. 23)
-    #         # 为了效率，直接计算 grad @ H 而不是构造完整矩阵
+    #         # Efficiency: apply grad @ H without building full H
     #         grad_t = grad.t()
-    #         # 投影到零空间: grad_proj = U_null @ (U_null.T @ grad_t)
+    #         # Project to nullspace: grad_proj = U_null @ (U_null.T @ grad_t)
     #         projected_grad_t = U_null @ (U_null.t() @ grad_t)
             
     #         # Expert relaxation (paper Eq. 21): Delta P = [eta * H + (1-eta) * I] @ Grad
-    #         # 如果是专家参数，应用 eta 松弛 (eta 接近 1，如 0.99)；如果是 Router，eta=1.0
+    #         # Expert params: eta relaxation (~0.99); router: eta=1.0
     #         eta = 0.99 
     #         scaled_grad_t = eta * projected_grad_t + (1 - eta) * grad_t
             
     #         scaled_grad = scaled_grad_t.t()
 
-    #         # 更新梯度
+    #         # Write scaled grad back
     #         grad_norm_before = grad.norm().item()
     #         grad.data.copy_(scaled_grad.data)
     #         grad_norm_after = grad.norm().item()
@@ -466,7 +466,7 @@ class SAMELinear(nn.Linear, SAMELayer):
 
     
     # def _make_curvature_hook(self, name, expert_id, adapter):
-    #     """硬正交投影：保留 95% 能量的方向"""
+    #     """Hard orthogonal projection: keep ~95% energy directions"""
     #     def hook(grad):
     #         if not self.training or self.cur_task == 0:
     #             return grad
@@ -484,13 +484,13 @@ class SAMELinear(nn.Linear, SAMELayer):
     #         energy = S_prev ** 2
     #         total_energy = energy.sum()
             
-    #         # 计算累积和
+    #         # Cumulative sum for energy ratio
     #         cumsum = torch.cumsum(energy, dim=0)
     #         ratio = cumsum / total_energy
             
-    #         # 找到第一个超过 0.9 的位置
+    #         # First index past 0.9 cumulative energy
     #         k = (ratio <= 0.9).sum().item() + 1
-    #         k = min(k, len(S_prev))  # 确保不越界
+    #         k = min(k, len(S_prev))  # clamp
             
     #         if k == 0:
     #             assert(0);
@@ -525,7 +525,7 @@ class SAMELinear(nn.Linear, SAMELayer):
             U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
             S_prev = getattr(self, f"cov_S_prev_{adapter}").to(device)
             
-            # 1. 确定有效秩 k（能量阈值法）
+            # 1) Effective rank k via energy threshold
             energy = S_prev ** 2
             total_energy = energy.sum()
             if total_energy < 1e-10:
@@ -538,23 +538,23 @@ class SAMELinear(nn.Linear, SAMELayer):
             k = (ratio <= thr).sum().item() + 1
             k = max(1, min(k, len(S_prev)))  # clamp k to [1, len(S_prev)]
             
-            # 2. 曲率感知缩放因子
+            # 2) Curvature-aware scales
             mu = self.curvature_mu  
-            inv_S = 1.0 / (S_prev[:k] + mu)      # 平行方向缩放
-            perp_scale = 1.0 / mu                 # 垂直方向缩放
+            inv_S = 1.0 / (S_prev[:k] + mu)      # in-subspace scaling
+            perp_scale = 1.0 / mu                 # orthogonal scaling
             
-            # 3. 梯度投影与缩放
+            # 3) Project and scale gradient
             grad_t = grad.t()  # [d_in, d_out]
             U_k = U_prev[:, :k]  # [d_in, k]
             
-            # 平行分量: V_k @ diag(inv_S) @ V_k.T @ grad.T
+            # Parallel part: V_k @ diag(inv_S) @ V_k.T @ grad.T
             proj_parallel = U_k @ (torch.diag(inv_S) @ (U_k.t() @ grad_t))
             
-            # 垂直分量: (1/μ) * (I - V_k @ V_k.T) @ grad.T
+            # Perpendicular part: (1/μ) * (I - V_k @ V_k.T) @ grad.T
             proj_perp = grad_t - U_k @ (U_k.t() @ grad_t)
             proj_perp_scaled = proj_perp * perp_scale
             
-            # 4. 合并并返回
+            # 4) Combine
             scaled_grad_t = proj_parallel + proj_perp_scaled
 
             grad_norm_before = grad.norm().item()

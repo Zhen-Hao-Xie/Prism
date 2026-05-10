@@ -1,4 +1,4 @@
-"""项目路径（单一配置，不再区分 base / instruct）。"""
+"""Central path configuration for the project."""
 from pathlib import Path
 
 PROJECT_ROOT = str(Path(__file__).parent.parent.parent.absolute())

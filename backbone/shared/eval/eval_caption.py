@@ -40,7 +40,7 @@ def create_coco_type(annotation_file, result_file, output_dir):
     return output_path, total
 
 def load_json(file_path):
-    """加载 JSON 文件"""
+    """Load a JSON file."""
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -101,7 +101,7 @@ def eval_single(output_file, annotation_file, total, args):
 
 def process_batch(api_key, batch):
     """
-    对一个批次的数据进行评分，返回该批次所有样本的评分列表。
+    Score one batch and return per-sample scores from the LLM judge API.
     """
 
     client = OpenAI(api_key=api_key, base_url="https://platform.llmprovider.ai/v1")
@@ -131,7 +131,7 @@ def process_batch(api_key, batch):
 
 def deepseek_chat_final(api_key, path, batch_size=10):
     """
-    使用多进程评估，返回所有样本的最终平均准确率。
+    Multi-process LLM judge scoring; returns aggregate accuracy-style stats.
     """
 
     with open(path, "r", encoding="utf-8") as f:

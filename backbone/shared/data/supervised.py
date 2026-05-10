@@ -1,4 +1,4 @@
-"""监督训练 Dataset / Collator（与 CL 方法无关）。"""
+"""Supervised training dataset / collator (CL-agnostic)."""
 from __future__ import annotations
 
 import copy
@@ -13,7 +13,7 @@ import transformers
 from PIL import Image
 from torch.utils.data import Dataset
 
-from config.backbones.constants import IGNORE_INDEX
+from config.backbone.constants import IGNORE_INDEX
 from backbone.shared.multimodal.data_processor import (
     expand2square,
     preprocess,
@@ -21,7 +21,7 @@ from backbone.shared.multimodal.data_processor import (
 )
 
 class LazySupervisedDataset(Dataset):
-    """懒加载的有监督数据集"""
+    """Lazy JSON-backed supervised dataset."""
 
     def __init__(self, data_path: str, tokenizer, data_args):
         super().__init__()
@@ -87,7 +87,7 @@ class LazySupervisedDataset(Dataset):
             crop_size = self.data_args.image_processor.crop_size
             data_dict["image"] = torch.zeros(3, crop_size["height"], crop_size["width"])
 
-        # 与当条训练数据同内容的 JSON 副本，仅供 CL 在 backward 之后写 buffer；本条仍参与本步 loss（见 tensor 字段）。
+        # JSON copy of the same row for CL buffers after backward; this row still trains this step.
         data_dict["cl_raw_example"] = copy.deepcopy(self.list_data_dict[i])
 
         return data_dict

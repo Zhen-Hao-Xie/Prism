@@ -1,11 +1,5 @@
 # method/base/cl_model.py
-"""
-持续学习模型包装器
-
-关键：
-1. 直接操作 _modules 字典注册 base_model，避免__setattr__ 循环依赖
-2. 在 forward 中手动调用 prepare_inputs_labels_for_multimodal
-"""
+"""CL wrapper: registers ``base_model`` on ``_modules`` for DeepSpeed; forwards multimodal prep and LM forward."""
 import torch
 import torch.nn as nn
 from typing import Optional, Tuple, Union, List
@@ -16,22 +10,15 @@ from .integration import CLIntegration
 
 
 class CLModel(nn.Module):
-    """持续学习模型包装器"""
-    
+
     def __init__(self, base_model, integration: CLIntegration):
-        # 关键 1: 调用 nn.Module.__init__
         nn.Module.__init__(self)
-        
-        # 关键 2: 设置内部属性
+
         object.__setattr__(self, '_integration', integration)
         object.__setattr__(self, '_cl_context', CLContext())
-        
-        # 关键 3: 直接操作 _modules 字典注册 base_model
-        # 这样 DeepSpeed 能正确遍历参数，且避免__setattr__ 循环依赖
+
         object.__setattr__(self, '_base_model', base_model)
-        self._modules['_base_model'] = base_model  # ← 关键：手动注册到 _modules
-        
-        # 关键 5: 复制其他属性（非 nn.Module 属性）
+        self._modules['_base_model'] = base_model
         if hasattr(base_model, 'config'):
             object.__setattr__(self, 'config', base_model.config)
         if hasattr(base_model, 'vocab_size'):
@@ -42,45 +29,29 @@ class CLModel(nn.Module):
             object.__setattr__(self, 'tokenizer', base_model.tokenizer)
         if hasattr(base_model, 'cur_task'):
             self._cl_context.task_id = base_model.cur_task
-        
-        # 关键 6: 初始化 integration
-        self._integration.initialize_model(self)
-        
-        # 关键 7: 验证参数量
-        total_params = sum(p.numel() for p in self.parameters())
-        trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        trainable_ratio = trainable_params / total_params * 100 if total_params > 0 else 0
 
-        print(f"CLModel initialized | integration: {integration.__class__.__name__}")
-        print(f"CLModel total parameters: {total_params:,}")
-        print(f"CLModel trainable parameters: {trainable_params:,}")
-        print(f"CLModel trainable ratio: {trainable_ratio:.4f}%")
-    
+        self._integration.initialize_model(self)
 
     def __getattr__(self, name: str):
-        """委托属性访问到 base_model（深度递归查找）"""
+        """Resolve attributes on ``base_model`` (nested PEFT / LLaVA)."""
         if name in ['_base_model', '_integration', '_cl_context']:
             return object.__getattribute__(self, name)
         
         try:
             _base_model = object.__getattribute__(self, '_base_model')
             
-            # 辅助函数：递归查找属性
             def find_attr(obj, attr_name, depth=0, max_depth=5):
                 if depth > max_depth:
                     return None
                 
-                # 直接查找
                 if hasattr(obj, attr_name):
                     return getattr(obj, attr_name)
                 
-                # 查找 model 属性
                 if hasattr(obj, 'model'):
                     result = find_attr(obj.model, attr_name, depth + 1, max_depth)
                     if result is not None:
                         return result
                 
-                # 查找 base_model 属性（PEFT 嵌套）
                 if hasattr(obj, 'base_model'):
                     result = find_attr(obj.base_model, attr_name, depth + 1, max_depth)
                     if result is not None:
@@ -88,7 +59,6 @@ class CLModel(nn.Module):
                 
                 return None
             
-            # 使用递归查找
             result = find_attr(_base_model, name)
             if result is not None:
                 return result
@@ -99,7 +69,7 @@ class CLModel(nn.Module):
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
     
     def __setattr__(self, name, value):
-        """拦截属性设置"""
+        """Route setattr to ``base_model`` when appropriate."""
         if name in ['_base_model', '_integration', '_cl_context']:
             object.__setattr__(self, name, value)
         else:
@@ -109,78 +79,72 @@ class CLModel(nn.Module):
             except AttributeError:
                 object.__setattr__(self, name, value)
     
-    # ========== 委托 parameters() 到 _base_model ==========
     def parameters(self, recurse: bool = True):
-        """返回所有参数（委托到 base_model）"""
+        """Yield parameters from ``base_model``."""
         _base_model = object.__getattribute__(self, '_base_model')
         if _base_model is not None:
             yield from _base_model.parameters(recurse=recurse)
     
     def named_parameters(self, prefix: str = '', recurse: bool = True):
-        """返回所有命名参数"""
+        """Yield named parameters from ``base_model``."""
         _base_model = object.__getattribute__(self, '_base_model')
         if _base_model is not None:
             yield from _base_model.named_parameters(prefix=prefix, recurse=recurse)
     
     
     def state_dict(self, *args, **kwargs):
-        """返回状态字典"""
+        """State dict of ``base_model``."""
         _base_model = object.__getattribute__(self, '_base_model')
         if _base_model is not None:
             return _base_model.state_dict(*args, **kwargs)
         return {}
     
     def modules(self):
-        """返回所有模块"""
+        """Modules from ``base_model``."""
         _base_model = object.__getattribute__(self, '_base_model')
         if _base_model is not None:
             yield from _base_model.modules()
+
     def load_state_dict(self, *args, **kwargs):
-        """加载状态字典"""
+        """Load state into ``base_model``."""
         _base_model = object.__getattribute__(self, '_base_model')
         if _base_model is not None:
             return _base_model.load_state_dict(*args, **kwargs)
     
-    # ========== 重写 to() 和 cuda() ==========
     def to(self, *args, **kwargs):
-        """确保 to() 调用正确委托到 base_model"""
+        """Move ``base_model`` then self."""
         _base_model = object.__getattribute__(self, '_base_model')
         if _base_model is not None:
             _base_model.to(*args, **kwargs)
         return super().to(*args, **kwargs)
     
     def cuda(self, device=None):
-        """确保 cuda() 调用正确委托到 base_model"""
+        """CUDA move ``base_model`` then self."""
         _base_model = object.__getattribute__(self, '_base_model')
         if _base_model is not None:
             _base_model.cuda(device)
         return super().cuda(device)
-    # =======================================================
+
     def _get_attr_recursive(self, name):
-        """递归查找属性（处理多层嵌套）"""
-        # Level 1: 直接在 self 上查找
+        """Resolve ``name`` across CLModel / PEFT / inner LLaVA."""
         if hasattr(self, name):
             return getattr(self, name)
         
-        # Level 2: 在 _base_model 上查找
-        _base_model = object.__getattribute__(self, '_base_model', None)
+        _base_model = getattr(self, '_base_model', None)
         if _base_model is not None:
             if hasattr(_base_model, name):
                 return getattr(_base_model, name)
             
-            # Level 3: 在 _base_model.base_model 上查找（PEFT 嵌套）
             if hasattr(_base_model, 'base_model'):
                 if hasattr(_base_model.base_model, name):
                     return getattr(_base_model.base_model, name)
                 
-                # Level 4: 在 _base_model.base_model.model 上查找（LLaVA 结构）
                 if hasattr(_base_model.base_model, 'model'):
                     if hasattr(_base_model.base_model.model, name):
                         return getattr(_base_model.base_model.model, name)
         
         return None
-    # ========== 重写 prepare_inputs_labels_for_multimodal ==========
-    # method/base/cl_model.py
+
     def prepare_inputs_labels_for_multimodal(
         self, 
         input_ids, 
@@ -189,42 +153,23 @@ class CLModel(nn.Module):
         past_key_values, 
         labels, 
         images,
-        image_sizes=None  # ← 关键字参数，不是位置参数
+        image_sizes=None,
     ):
-        """拦截点 1: 输入准备阶段"""
-        
-        # ========== [调试] 检查 text_tower ==========
         _base_model = object.__getattribute__(self, '_base_model')
-        text_tower = self._get_attr_recursive('text_tower')
-        if text_tower is None:
-            print("  text_tower not found; HiDe text routing will be skipped")
 
-        
-        if text_tower is None:
-            # 尝试从更深层获取
-            if hasattr(_base_model, 'base_model'):
-                text_tower = getattr(_base_model.base_model, 'text_tower', None)
-                print(f"  text_tower (from base_model.base_model) is None = {text_tower is None}")
-        # ===================================
-        
-        # 执行 CL 逻辑
         if hasattr(self, '_integration'):
             self._integration.on_input_prep(
-                self, 
+                self,
                 (input_ids, position_ids, attention_mask, past_key_values, labels, images),
                 {'images': images, 'image_sizes': image_sizes},
                 self._cl_context
             )
-        
-        # 调用 base_model 的原始方法
-        # ========== 关键修复：只传递原始方法期望的参数 ==========
+
         return _base_model.prepare_inputs_labels_for_multimodal(
-            input_ids, position_ids, attention_mask, 
+            input_ids, position_ids, attention_mask,
             past_key_values, labels, images
-            # 不传递 image_sizes，除非原始方法支持
         )
     
-    # ========== 重写 forward，手动调用 prepare_inputs_labels_for_multimodal ==========
     def forward(
         self,
         input_ids: torch.LongTensor = None,
@@ -240,14 +185,12 @@ class CLModel(nn.Module):
         images: Optional[torch.FloatTensor] = None,
         **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-        """拦截点 2: 模型 Forward 阶段"""
+        """Forward with CL hooks and multimodal prep."""
         
-        # CL 逻辑：Forward 开始
         self._cl_context.clear()
         self._cl_context.is_training = self.training
         self._integration.on_forward_start(self, self._cl_context)
         
-        # 手动调用 prepare_inputs_labels_for_multimodal
         if inputs_embeds is None and images is not None:
             (input_ids, position_ids, attention_mask, 
              past_key_values, inputs_embeds, labels) = self.prepare_inputs_labels_for_multimodal(
@@ -255,7 +198,6 @@ class CLModel(nn.Module):
                 past_key_values, labels, images, kwargs.get('image_sizes')
             )
         
-        # 调用 base_model 的 forward（训练 batch 可能含 ``cl_raw_example``，仅用于 CL 钩子，不得传入 LM）
         _base_kwargs = {k: v for k, v in kwargs.items() if k != "cl_raw_example"}
         _base_model = object.__getattribute__(self, '_base_model')
         outputs = _base_model.forward(
@@ -272,7 +214,6 @@ class CLModel(nn.Module):
             **_base_kwargs,
         )
         
-        # CL 逻辑：Forward 结束
         outputs = self._integration.on_forward_end(self, outputs, self._cl_context)
         
         return outputs
@@ -294,23 +235,14 @@ class CLModel(nn.Module):
     def cleanup(self) -> None:
         if hasattr(self._integration, 'hook_manager'):
             self._integration.hook_manager.remove_all()
-        print("CLModel resources cleaned up")
 
-    # method/base/cl_model.py
     def pre_generate_hook(self, model, input_ids, images, context) -> bool:
-        """
-        在 generate 之前的钩子，子类可以重写
-        
-        Returns:
-            bool: True 表示已处理，False 表示未处理
-        """
+        """Optional hook before ``generate``; subclass may override."""
         return False
     
     def generate(self, *args, **kwargs):
-
-        """重写 generate，调用 integration 的 pre_generate_hook"""
+        """``generate`` with ``integration.pre_generate_hook`` when present."""
         
-        # ========== 调用 pre_generate_hook ==========
         if hasattr(self, '_integration'):
             input_ids = kwargs.get('input_ids', args[0] if args else None)
             images = kwargs.get('images', None)
@@ -318,7 +250,6 @@ class CLModel(nn.Module):
             
             if hasattr(self._integration, 'pre_generate_hook'):
                 self._integration.pre_generate_hook(self, input_ids, images, context)
-        # ===========================================
         
         if hasattr(self, '_base_model'):
             return self._base_model.generate(*args, **kwargs)

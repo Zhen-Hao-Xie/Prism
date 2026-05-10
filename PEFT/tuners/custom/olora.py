@@ -1,16 +1,16 @@
 # -*- encoding: utf-8 -*-
 """
-O-LoRA（Orthogonal Low-Rank Adaptation）多任务 LoRA 实现。
+Orthogonal Low-Rank Adaptation (O-LoRA) — multi-task LoRA.
 
-- 每层维护 ``expert_num`` 组低秩适配器（对应最多 ``expert_num`` 个顺序任务）。
-- **训练**：仅当前任务 ``cur_task`` 对应的 A/B 参与前向；与论文一致可对历史 A 施加正交正则（见 ``compute_olora_orthogonal_loss``）。
-- **推理**（``eval``）：将任务 ``0..cur_task`` 的 A、B 在秩维上拼接，等价于累计 LoRA 作用（与 CoIN / 原 OLoRA 推理方式一致）。
+- Each layer keeps ``expert_num`` low-rank adapter groups (one slot per sequential task, up to ``expert_num``).
+- **Train**: only A/B for ``cur_task`` participate in the forward; optional orthogonal regularizer on past A
+  (see ``compute_olora_orthogonal_loss``).
+- **Eval**: concatenate A/B for tasks ``0..cur_task`` along rank — cumulative LoRA effect (CoIN / original OLoRA style).
 
-无 token 级 Router，与工具包内 ``MoELoRA``（软路由）正交。
+No token-level router (orthogonal to ``MoELoRA`` soft routing).
 
-正交项在 ``OLoRALinear.forward`` 内计算并 **fuse** 进本层输出 ``result``（极小系数），
-再经 ``OLoRAModel._olora_orth_sum`` 汇总后写入 ``loss``；与在 ``forward`` 外对 Parameter
-再建一条 loss 边相比，可与 CE、activation checkpoint、DeepSpeed ZeRO-2 共用同一反向路径。
+Orthogonal terms are computed inside ``OLoRALinear.forward``, **fused** into ``result`` with a tiny scale, then summed in
+``OLoRAModel._olora_orth_sum`` and attached to ``loss`` — same backward path as CE / checkpoint / ZeRO-2.
 """
 from __future__ import annotations
 
@@ -47,12 +47,12 @@ from ..standard.lora import (
 if is_bnb_available():
     import bitsandbytes as bnb
 
-# 将正交标量 fuse 进线性输出，使 d(loss)/d(A) 经 ``result`` 主路径回传（系数极小，对 logits 影响可忽略）
+# Fuse orthogonal scalar into linear output so gradients to A flow through ``result`` (scale negligible for logits)
 OLORA_ORTH_FUSE_SCALE: float = 1e-8
 
 
 def _olora_linear_orthogonal_fragment(linear: "OLoRALinear", adapter_name: str) -> Optional[torch.Tensor]:
-    """单层：``sum_{i<t} |A_t A_i^T|``（L1）；历史 ``A_i`` detach。无历史时返回 None。"""
+    """Per layer: L1 ``sum_{i<t} |A_t A_i^T|``; historical ``A_i`` detached. None if no history."""
     if linear.cur_task < 1:
         return None
     if adapter_name not in linear.lora_A:
@@ -70,18 +70,18 @@ def _olora_linear_orthogonal_fragment(linear: "OLoRALinear", adapter_name: str) 
 
 @dataclass
 class OLoRAConfig(LoraConfig):
-    """O-LoRA：在标准 LoRA 超参上增加任务槽位数与当前任务索引。"""
+    """O-LoRA: standard LoRA fields plus task slots and current task index."""
 
-    expert_num: int = field(default=8, metadata={"help": "任务槽 / 专家数（顺序 CL 最大任务数）。"})
-    cur_task: int = field(default=0, metadata={"help": "当前正在训练的任务 id，0-based。"})
-    task_embedding_dim: int = field(default=64, metadata={"help": "占位字段，与旧 CoIN 配置兼容。"})
+    expert_num: int = field(default=8, metadata={"help": "Task slots / experts (max sequential tasks)."})
+    cur_task: int = field(default=0, metadata={"help": "Current training task id (0-based)."})
+    task_embedding_dim: int = field(default=64, metadata={"help": "Legacy field for old CoIN configs."})
 
     def __post_init__(self):
         self.peft_type = PeftType.MOE_LORA_OLORA
 
 
 class OLoRAModel(LoraModel):
-    """将目标 Linear 替换为 ``OLoRALinear``（多任务槽 + 当前任务单路前向）。"""
+    """Replace target Linears with ``OLoRALinear`` (multi-slot + single active path in train)."""
 
     def __init__(self, model, config, adapter_name):
         nn.Module.__init__(self)
@@ -119,7 +119,7 @@ class OLoRAModel(LoraModel):
         self._register_olora_orth_reset_hook()
 
     def _register_olora_orth_reset_hook(self) -> None:
-        """每个 LM forward 开始时清空正交累加器（与 decoder 前向对齐）。"""
+        """Reset orthogonal accumulator at each LM forward start (align with decoder forward)."""
         if getattr(self, "_olora_orth_hook_handle", None) is not None:
             return
         inner = self.model
@@ -377,7 +377,7 @@ class OLoRALinear(nn.Linear, OLoRALayer):
         nn.Linear.reset_parameters(self)
         self.update_layer(adapter_name, r, lora_alpha, lora_dropout, init_lora_weights)
         self.active_adapter = adapter_name
-        # OLoRAModel 是 nn.Module，不可在 Module.__init__ 完成前赋值给 self（会被注册为子模块）
+        # OLoRAModel is nn.Module; do not assign to self before Module.__init__ completes (would register as child)
         object.__setattr__(self, "_olora_tuner_parent", olora_tuner_parent)
 
     def merge(self):
@@ -431,7 +431,7 @@ class OLoRALinear(nn.Linear, OLoRALayer):
 
 
 class OLoRALinearA(nn.Module):
-    """各任务槽的 LoRA A 侧；训练时只激活 ``cur_task``。"""
+    """LoRA A bank per task slot; training uses only ``cur_task``."""
 
     def __init__(self, in_features, r_total, expert_num, cur_task, layer_id):
         super().__init__()
@@ -440,11 +440,11 @@ class OLoRALinearA(nn.Module):
         self.layer_id = layer_id
         r_per = r_total // expert_num
         if r_per * expert_num != r_total:
-            raise ValueError(f"LoRA rank r={r_total} 必须能被 expert_num={expert_num} 整除。")
+            raise ValueError(f"LoRA rank r={r_total} must be divisible by expert_num={expert_num}.")
         self.r_per = r_per
         self.in_features = in_features
         self.loraA = nn.ModuleList([OLoRAExpert(in_features, r_per) for _ in range(expert_num)])
-        # 推理路径避免每层每步 new nn.Linear（自回归会爆炸）；按 (eval_max_task, device, dtype) 缓存拼接权重
+        # Inference: cache concatenated weights per (eval_max_task, device, dtype) to avoid per-step nn.Linear in AR decode
         self._eval_weight_cache: Dict[tuple, torch.Tensor] = {}
 
     def forward(self, x: torch.Tensor, eval_max_task: Optional[int]) -> torch.Tensor:
@@ -461,7 +461,7 @@ class OLoRALinearA(nn.Module):
 
 
 class OLoRALinearB(nn.Module):
-    """各任务槽的 LoRA B 侧。"""
+    """LoRA B bank per task slot."""
 
     def __init__(self, r_total, out_features, expert_num, cur_task, layer_id):
         super().__init__()
@@ -470,7 +470,7 @@ class OLoRALinearB(nn.Module):
         self.layer_id = layer_id
         r_per = r_total // expert_num
         if r_per * expert_num != r_total:
-            raise ValueError(f"LoRA rank r={r_total} 必须能被 expert_num={expert_num} 整除。")
+            raise ValueError(f"LoRA rank r={r_total} must be divisible by expert_num={expert_num}.")
         self.r_per = r_per
         self.out_features = out_features
         self.loraB = nn.ModuleList([OLoRAExpert(r_per, out_features) for _ in range(expert_num)])
@@ -499,7 +499,7 @@ class OLoRAExpert(nn.Module):
 
 
 def sync_olora_cur_task(model: nn.Module, cur_task: int) -> None:
-    """将 ``cur_task`` 写入所有 ``OLoRALinear`` 及其 A/B 子模块（训练单路 / 推理累计范围）。"""
+    """Propagate ``cur_task`` to every ``OLoRALinear`` and A/B children (train vs eval merge range)."""
     for m in model.modules():
         if isinstance(m, OLoRALinear):
             m.cur_task = int(cur_task)
@@ -517,10 +517,10 @@ def apply_olora_expert_trainable_mask(
     adapter_name: str = "default",
 ) -> None:
     """
-    仅当前任务槽 ``cur_task`` 的 LoRA 参数可训练；其余任务槽与未来槽冻结。
-    应在 ``mark_only_lora_as_trainable`` 之后调用。
+    Only LoRA weights for slot ``cur_task`` train; other slots frozen.
+    Call after ``mark_only_lora_as_trainable``.
     """
-    # 兼容 ``...loraA.i.mlp.weight``（常规）与历史 ``...loraA.i.weight``（曾对 mlp.weight 重复注册）
+    # Match ``...loraA.i.mlp.weight`` or legacy ``...loraA.i.weight``
     pat = re.compile(rf"lora_[AB]\.{re.escape(adapter_name)}\.lora[AB]\.(\d+)\.(?:mlp\.)?weight$")
     for name, p in model.named_parameters():
         m = pat.search(name)
@@ -536,9 +536,9 @@ def compute_olora_orthogonal_loss(
     adapter_name: str = "default",
 ) -> torch.Tensor:
     """
-    O-LoRA 正交正则：对每层前缀，累加 ``sum |A_t @ A_i^T|``（``i < t``），``A`` 为 ``lora_A`` 权重矩阵。
+    O-LoRA orthogonal regularizer: per layer prefix, sum ``sum |A_t @ A_i^T|`` for ``i < t`` over ``lora_A`` matrices.
 
-    与论文中 ``||A_i^T A_t||_F^2`` 不同之处在于使用 L1 式绝对值和（与原 LLaVA OLoRA 脚本一致）。
+    Uses L1 sum of absolute values (legacy LLaVA OLoRA script), not paper ``||A_i^T A_t||_F^2``.
     """
     if cur_task < 1:
         p = next(model.parameters(), None)

@@ -149,11 +149,10 @@ class ModulesToSaveWrapper(torch.nn.Module):
 
 def _get_submodules(model, key):
     """
-    解析 ``named_modules`` 的 ``key``，返回 ``parent, target, target_name, layer``。
+    Parse ``named_modules`` key into ``parent, target, target_name, layer``.
 
-    ``layer`` 供 HiDe / MoE-LoRA 等按 block 索引区分行为；对 ``*.layers.{i}.*`` 取 ``i``，
-    否则（如 ``model.lm_head``）为 ``-1``。历史实现写死 ``key.split('.')[2]``，
-    在仅含 ``model.lm_head`` 两段路径时会 **IndexError**。
+    ``layer`` is the transformer block index for paths like ``*.layers.{i}.*``; ``-1`` for shallow modules (e.g. ``model.lm_head``).
+    Older code used ``key.split('.')[2]`` and could **IndexError** on two-segment paths.
     """
     if not key:
         raise ValueError("_get_submodules: empty key")

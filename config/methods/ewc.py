@@ -35,7 +35,7 @@ TRAIN_BATCH_SIZES = {
         2: 8,
         3: 8,
         4: 8,
-        5: 8,
+        5: 4,
     },
 }
 
@@ -45,8 +45,10 @@ METHOD_CONFIG = {
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
     "ewc_lambda": 5000.0,
     "ewc_fisher_batches": 50,
-    # Fisher 在 on_train_end 跑，与训练 per_device_batch 无关；过小慢、过大易 OOM，可按卡调整
+    # Fisher accumulation runs at on_train_end (not tied to per-device batch); tune per GPU memory
     "ewc_fisher_micro_batch_size": 2,
+    # Forward EWC penalty chunks (elements per slice) to limit GPU temporaries; lower if still OOM.
+    "ewc_penalty_chunk_elements": 262144,
 }
 
 METHOD_CONFIG_BY_BENCHMARK = {

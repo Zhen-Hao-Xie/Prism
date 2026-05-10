@@ -25,7 +25,7 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    """延迟加载重模块，避免 import common / common.load_model 时串联 TF、torch.compile 与 sentencepiece 冲突导致段错误。"""
+    """Lazy-import heavy modules to avoid import-time TF/torch.compile/sentencepiece conflicts."""
     if name == "load_model_for_train":
         from .load_model import load_model_for_train
 

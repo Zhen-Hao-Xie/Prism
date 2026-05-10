@@ -67,7 +67,7 @@ class HiDeMOELoraModel(LoraModel):
     #added by me
     def set_predicted_task_id(self, task_id: int):
         self.predicted_task_id = task_id
-        # 递归设置到所有 LoRA 层
+        # Propagate to every HiDe MoE LoRA layer
         for module in self.model.modules():
             if isinstance(module, HiDeMOELoraLinear):
                 module.predicted_task_id = task_id
@@ -381,7 +381,7 @@ class HiDeMOELoraLinear(nn.Linear, HiDeMOELoraLayer):
             return None
 
     def _inference_use_predicted_expert(self) -> bool:
-        """仅最后一层 transformer block 上的 LoRA 在推理时按 predicted_task_id 选专家；其余层 fuse。"""
+        """Last transformer block uses predicted_task_id for expert selection; other layers fuse experts."""
         if self.last_layer_idx is None:
             return True
         idx = self._parse_layer_index()
@@ -421,11 +421,11 @@ class HiDeMOELoraLinear(nn.Linear, HiDeMOELoraLayer):
     def forward(self, x: torch.Tensor, **kwargs):
         previous_dtype = x.dtype
 
-        #如果当前 adapter 没有注册 LoRA（比如只用 base model），直接走原始线性层
+        # No LoRA adapter registered (base linear only)
         if self.active_adapter not in self.lora_A.keys():
             return F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
 
-        #如果禁用 adapters（比如 inference 时想关闭 LoRA）
+        # Adapters disabled
         if self.disable_adapters:
             if self.r[self.active_adapter] > 0 and self.merged:
                 self.unmerge()
@@ -440,7 +440,7 @@ class HiDeMOELoraLinear(nn.Linear, HiDeMOELoraLayer):
                 lora_b_output = self.lora_B[self.active_adapter](lora_a_output, task_id)
                 result += lora_b_output * self.scaling[self.active_adapter]
             else:
-                # 推理：仅最后一层按 predicted_task_id 选单专家；其余层对所有专家 LoRA 增量求和（fuse）
+                # Inference: last layer picks one expert via predicted_task_id; others sum all expert deltas (fuse)
                 if self._inference_use_predicted_expert():
                     if self.predicted_task_id == -1:
                         raise RuntimeError(
@@ -461,8 +461,8 @@ class HiDeMOELoraLinear(nn.Linear, HiDeMOELoraLayer):
         return result
 
 
-#HiDeMOELinearA 和 HiDeMOELinearB 不是普通的 LoRA 矩阵，而是 包含多个 expert（任务专属 LoRA）的 ModuleList。
-#它们在初始化时就 预创建 expert_num 个独立的 LoRA 子模块（每个任务一个）。
+# HiDeMOELinearA/B wrap ModuleList of per-task expert LoRA blocks (not plain 2D LoRA matrices).
+# expert_num submodules are created up front (one slot per task).
 class HiDeMOELinearA(nn.Module):
     '''MMOE based LoRA block'''
     def __init__(self, in_features, out_features, expert_num, cur_task, training, layer) -> None:

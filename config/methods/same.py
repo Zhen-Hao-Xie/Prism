@@ -1,9 +1,9 @@
 """
 Defaults for method: same
 
-可选 ``METHOD_CONFIG["exclude_module_path_segments"]`` 控制 PEFT 注入路径；默认已设为仅 LLM 注入。
+Optional ``METHOD_CONFIG["exclude_module_path_segments"]`` scopes PEFT paths; default keeps injection on the LLM only.
 
-``peft_target_modules``：本方法默认 **仅 FFN**（``gate_proj`` / ``up_proj`` / ``down_proj``）；可用 ``METHOD_CONFIG`` 或 ``--peft_target_modules`` 覆盖，见 ``PEFT/utils/peft_target_modules.py``。
+``peft_target_modules``: this method defaults to **FFN only** (``gate_proj`` / ``up_proj`` / ``down_proj``); override via ``METHOD_CONFIG`` or ``--peft_target_modules`` (see ``PEFT/utils/peft_target_modules.py``).
 """
 
 from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
@@ -52,12 +52,12 @@ TRAIN_BATCH_SIZES = {
 METHOD_CONFIG = {
     "lora_dropout": 0.05,
     "peft_target_modules": "ffn",
-    # SAME PEFT 层内谱 / 曲率相关超参（见 PEFT.tuners.custom.same.SAMELinear）
+    # SAME spectral / curvature knobs (see PEFT.tuners.custom.same.SAMELinear)
     "tau_score": 0.1,
     "curvature_mu": 0.9,
     "window_size": 3,
     "max_components": 64,
-    # 累积奇异值能量占比阈值，用于选取主方向（原默认 0.9）
+    # Cumulative singular-value energy threshold for principal directions (legacy default 0.9)
     "cumulative_energy_ratio": 0.9,
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
 }

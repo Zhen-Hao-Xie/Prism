@@ -1,1 +1,1 @@
-"""按骨干网划分的配置（与 ``config/backbones`` 下的聚合入口配合使用）。"""
+"""Per-backbone config: ``llava.py`` (dims, templates), ``constants.py`` (shared token ids)."""

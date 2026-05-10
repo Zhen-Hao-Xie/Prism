@@ -1,16 +1,18 @@
 """
-与 ``PEFT.utils.llava_peft_scope`` 对齐，供各 method 在扫描 ``named_modules``（如 ``_find_target_modules``）时
-与 PEFT 注入使用同一套 ``exclude_module_path_segments`` 规则。
+Aligns with ``PEFT.utils.llava_peft_scope`` so method code scanning ``named_modules`` uses the same
+``exclude_module_path_segments`` rules as PEFT injection.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any, List
 
 import torch.nn as nn
 
 from PEFT.utils.llava_peft_scope import DEFAULT_LLAVA_EXCLUDE_PATH_SEGMENTS, should_skip_peft_path
 from PEFT.utils.peft_target_modules import resolve_peft_target_spec_to_allowed_suffixes
+from utils.rank import is_local_main_process
 
 
 def should_skip_module_for_peft_scan(full_module_name: str, method_config: Any) -> bool:
@@ -42,20 +44,22 @@ def collect_peft_target_linear_suffixes(model: nn.Module, method_config: Any) ->
     allow = resolve_peft_target_spec_to_allowed_suffixes(spec)
     if allow is None:
         out = sorted(found)
-        if not out:
-            print("    Warning: no in-scope nn.Linear for PEFT; check exclude_module_path_segments / model")
-        else:
-            print(f"    PEFT target_modules (all in-scope Linears, spec={spec!r}): {out}")
+        if is_local_main_process():
+            if not out:
+                logging.warning("No in-scope nn.Linear for PEFT; check exclude_module_path_segments / model")
+            else:
+                logging.info("PEFT target_modules (all in-scope Linears, spec=%r): %s", spec, out)
         return out
     out = sorted(found & allow)
     if not out and found:
         raise ValueError(
-            f"peft_target_modules={spec!r} 与当前 LLM 中在 scope 内的 Linear 子模块名无交集。"
-            f" 已扫描到后缀(示例)={sorted(found)[:32]}，允许集={allow}"
+            f"peft_target_modules={spec!r} has no overlap with in-scope Linear suffixes in this model."
+            f" Found suffix sample={sorted(found)[:32]}, allowed={allow}"
         )
     if not out and not found:
-        raise ValueError("模型中在 scope 内未找到任何 nn.Linear，请检查与 exclude 配置。")
-    print(f"    PEFT target_modules (spec={spec!r}): {out}")
+        raise ValueError("No in-scope nn.Linear found; check exclude_module_path_segments / model.")
+    if is_local_main_process():
+        logging.info("PEFT target_modules (spec=%r): %s", spec, out)
     return out
 
 

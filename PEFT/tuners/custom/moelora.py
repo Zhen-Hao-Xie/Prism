@@ -1,12 +1,12 @@
 # -*- encoding: utf-8 -*-
 """
-标准 MoELoRA（Mixture-of-Experts LoRA）：
+Standard MoE-LoRA (Mixture-of-Experts LoRA):
 
-- **Router**：对每层、每个 token 的输入隐状态做线性映射得到 ``E`` 维 logits，``softmax`` 得门控 ``g``。
-- **Experts**：``E`` 组 LoRA 低秩支路（本实现将总秩 ``r`` 均分到各专家：每专家 A: ``d→r/E``，B: ``r/E→d'``）。
-- **输出**：``Δ = Σ_e g_e · B_e(A_e(x))``，再按 ``lora_alpha/r`` 缩放后与冻结主干线性输出相加。
+- **Router**: per-layer, per-token linear map to ``E`` logits, ``softmax`` -> gates ``g``.
+- **Experts**: ``E`` LoRA branches; total rank ``r`` is split across experts (A: ``d→r/E``, B: ``r/E→d'``).
+- **Output**: ``Δ = Σ_e g_e · B_e(A_e(x))``, scaled by ``lora_alpha/r`` and added to frozen base linear.
 
-与 ``MOE_LORA_SAME`` 等方法独立；``task_embedding_dim`` 仅保留为配置字段兼容。
+Independent of ``MOE_LORA_SAME``; ``task_embedding_dim`` is kept for legacy configs.
 """
 import warnings
 from dataclasses import dataclass, field
@@ -42,7 +42,7 @@ if is_bnb_available():
 
 @dataclass
 class MoELoRAConfig(LoraConfig):
-    """MoELoRA：与 LoRA 相同的超参，另含专家数等（与旧 SAME 命名脱钩）。"""
+    """MoE-LoRA: LoRA fields plus expert/task knobs (renamed from legacy SAME naming)."""
 
     task_embedding_dim: int = field(default=64)
     expert_num: int = field(default=8)
@@ -376,7 +376,7 @@ class MoELoRALinear(nn.Linear, MoELoRALayer):
 
 
 class MoELoRALinearA(nn.Module):
-    """各专家 LoRA 的 A 侧；``routing_weights`` 与 ``x`` 除最后一维外形状对齐，形状 ``(..., E)``。"""
+    """Expert LoRA A banks; ``routing_weights`` aligns with ``x`` except last dim, shape ``(..., E)``."""
 
     def __init__(self, in_features, out_features, expert_num, cur_task, training, layer_id):
         super().__init__()
@@ -384,7 +384,7 @@ class MoELoRALinearA(nn.Module):
         self.in_features, self.out_features = in_features, out_features
         r_per = out_features // expert_num
         if r_per * expert_num != out_features:
-            raise ValueError(f"LoRA rank r={out_features} 必须能被 expert_num={expert_num} 整除。")
+            raise ValueError(f"LoRA rank r={out_features} must be divisible by expert_num={expert_num}.")
         self.loraA = nn.ModuleList([MoELoRAExpert(in_features, r_per) for _ in range(expert_num)])
         self.layer_id = layer_id
 
@@ -398,7 +398,7 @@ class MoELoRALinearA(nn.Module):
 
 
 class MoELoRALinearB(nn.Module):
-    """各专家 LoRA 的 B 侧；``routing_weights`` 形状 ``(..., E)``。"""
+    """Expert LoRA B banks; ``routing_weights`` shape ``(..., E)``."""
 
     def __init__(self, in_features, out_features, expert_num, cur_task, training, layer_id):
         super().__init__()
@@ -406,7 +406,7 @@ class MoELoRALinearB(nn.Module):
         self.in_features, self.out_features = in_features, out_features
         r_per = in_features // expert_num
         if r_per * expert_num != in_features:
-            raise ValueError(f"LoRA rank r={in_features} 必须能被 expert_num={expert_num} 整除。")
+            raise ValueError(f"LoRA rank r={in_features} must be divisible by expert_num={expert_num}.")
         self.loraB = nn.ModuleList([MoELoRAExpert(r_per, out_features) for _ in range(expert_num)])
         self.layer_id = layer_id
 
