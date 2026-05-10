@@ -52,6 +52,10 @@ from .tuners import (
     MoELoRAModel,
     OLoRAModel,
     SMoLoraModel,
+    CLMoEModel,
+    DiscoMOELoraModel,
+    ModalPromptConfig,
+    ModalPromptModel,
 )
 from .utils import (
     SAFETENSORS_WEIGHTS_NAME,
@@ -85,6 +89,9 @@ PEFT_TYPE_TO_MODEL_MAPPING = {
     PeftType.MOE_LORA_MOELORA: MoELoRAModel,
     PeftType.MOE_LORA_OLORA: OLoRAModel,
     PeftType.SMOLORA: SMoLoraModel,
+    PeftType.CLMOE: CLMoEModel,
+    PeftType.MOE_LORA_DisCo: DiscoMOELoraModel,
+    PeftType.MODAL_PROMPT: ModalPromptModel,
 }
 
 
@@ -1799,3 +1806,85 @@ class PeftModelForCausalLMLORAMOE(PeftModelForCausalLM):
             prompts = prompts.to(inputs_embeds.dtype)
             inputs_embeds = torch.cat((prompts, inputs_embeds), dim=1)
             return self.base_model(inputs_embeds=inputs_embeds, **kwargs)
+
+
+class PeftModelForCausalLMModalPrompt(PeftModelForCausalLM):
+    """Causal LM PEFT wrapper that routes forward/generate through ModalPromptModel."""
+
+    def forward(self, *args, **kwargs):
+        """Route through ModalPromptModel so soft prompts are injected."""
+        return self.base_model(*args, **kwargs)
+
+    def generate(self, **kwargs):
+        """Patch prepare_inputs_for_generation on the inner model so
+        prompt injection works during generation."""
+        inner = self.base_model.model
+        saved = inner.prepare_inputs_for_generation
+        inner.prepare_inputs_for_generation = self.prepare_inputs_for_generation
+        if hasattr(self.base_model, "model"):
+            self.base_model.model.generation_config = self.generation_config
+        else:
+            self.base_model.generation_config = self.generation_config
+        try:
+            outputs = self.base_model.generate(**kwargs)
+        except:
+            inner.prepare_inputs_for_generation = saved
+            raise
+        else:
+            inner.prepare_inputs_for_generation = saved
+            return outputs
+
+    def prepare_inputs_for_generation(self, *args, **kwargs):
+        model_kwargs = self.base_model_prepare_inputs_for_generation(*args, **kwargs)
+        cfg = self.active_peft_config
+        if not isinstance(cfg, ModalPromptConfig):
+            return model_kwargs
+
+        if model_kwargs.get("past_key_values") is not None:
+            return model_kwargs
+
+        if model_kwargs.get("input_ids") is None:
+            return model_kwargs
+
+        input_ids = model_kwargs["input_ids"]
+        b = input_ids.shape[0]
+        base = self.base_model
+        images = model_kwargs.pop("images", None)
+        attn_mask = model_kwargs.get("attention_mask", None)
+
+        if images is not None:
+            inner = base.model
+            _, _pos, _attn, _, img_embeds, _ = inner.prepare_inputs_labels_for_multimodal(
+                input_ids, None, attn_mask, None, None, images
+            )
+            prompts = base._prompt_batch(b, img_embeds.device, img_embeds.dtype)
+            total_prompt_len = prompts.shape[1]
+            model_kwargs["inputs_embeds"] = torch.cat([prompts, img_embeds], dim=1)
+            model_kwargs["input_ids"] = None
+
+            if _attn is not None:
+                prefix = torch.ones(b, total_prompt_len, device=_attn.device, dtype=_attn.dtype)
+                model_kwargs["attention_mask"] = torch.cat([prefix, _attn], dim=1)
+
+            model_kwargs.pop("position_ids", None)
+        else:
+            emb = base.model.get_input_embeddings()(input_ids)
+            prompts = base._prompt_batch(b, input_ids.device, emb.dtype)
+            total_prompt_len = prompts.shape[1]
+            model_kwargs["inputs_embeds"] = torch.cat([prompts, emb], dim=1)
+            model_kwargs["input_ids"] = None
+
+            if attn_mask is not None:
+                prefix = torch.ones(b, total_prompt_len, device=attn_mask.device, dtype=attn_mask.dtype)
+                model_kwargs["attention_mask"] = torch.cat([prefix, attn_mask], dim=1)
+
+            if model_kwargs.get("position_ids", None) is not None:
+                warnings.warn("[ModalPrompt] position_ids not supported during generation prep; dropping.")
+                model_kwargs["position_ids"] = None
+
+        return model_kwargs
+
+
+class PeftModelForCausalLMLORAMOEDisCo(PeftModelForCausalLMLORAMOE):
+    """DisCo uses the same routing forward as PeftModelForCausalLMLORAMOE."""
+    pass

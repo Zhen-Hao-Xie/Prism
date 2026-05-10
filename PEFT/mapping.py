@@ -26,6 +26,8 @@ from .peft_model import (
     PeftModelForSequenceClassification,
     PeftModelForTokenClassification,
     PeftModelForCausalLMLORAMOE,
+    PeftModelForCausalLMModalPrompt,
+    PeftModelForCausalLMLORAMOEDisCo,
 )
 from .tuners import (
     AdaLoraConfig,
@@ -40,6 +42,9 @@ from .tuners import (
     MoELoRAConfig,
     OLoRAConfig,
     SMoLoraConfig,
+    CLMoEConfig,
+    DiscoMOELoraConfig,
+    ModalPromptConfig,
 )
 from .utils import PromptLearningConfig, _prepare_prompt_learning_config
 
@@ -59,6 +64,8 @@ MODEL_TYPE_TO_PEFT_MODEL_MAPPING = {
     "FEATURE_EXTRACTION": PeftModelForFeatureExtraction,
     "CAUSAL_LM_HiDe": PeftModelForCausalLMLORAMOE,
     "CAUSAL_LM_SMOLORA": PeftModelForCausalLMLORAMOE,
+    "CAUSAL_LM_MODAL_PROMPT": PeftModelForCausalLMModalPrompt,
+    "CAUSAL_LM_DisCo": PeftModelForCausalLMLORAMOEDisCo,
 }
 
 PEFT_TYPE_TO_CONFIG_MAPPING = {
@@ -74,6 +81,9 @@ PEFT_TYPE_TO_CONFIG_MAPPING = {
     "MOE_LORA_MOELORA": MoELoRAConfig,
     "MOE_LORA_OLORA": OLoRAConfig,
     "SMOLORA": SMoLoraConfig,
+    "CLMOE": CLMoEConfig,
+    "MOE_LORA_DisCo": DiscoMOELoraConfig,
+    "MODAL_PROMPT": ModalPromptConfig,
 }
 
 

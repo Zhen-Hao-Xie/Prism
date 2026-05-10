@@ -9,6 +9,7 @@ from transformers.trainer import (
     ALL_LAYERNORM_LAYERS,
     ShardedDDPOption,
     logger,
+    TRAINING_ARGS_NAME,
 )
 from typing import Any, Dict, Optional
 
@@ -136,6 +137,12 @@ class LLaVATrainer(Trainer):
                 },
             ]
 
+        # Filter out empty param groups (can happen with mm_projector_lr set
+        # but projector params frozen, e.g. prompt-based CL methods)
+        optimizer_grouped_parameters = [
+            g for g in optimizer_grouped_parameters if len(g["params"]) > 0
+        ]
+
         optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
 
         # 处理 ShardedDDP
@@ -185,5 +192,49 @@ class LLaVATrainer(Trainer):
             super()._save_checkpoint(model, trial, metrics)
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
-        if not getattr(self.args, 'tune_mm_mlp_adapter', False):
+        """Save model checkpoint. When the model is a CLModel wrapping a PeftModel,
+        save PEFT adapter weights (adapter_model + adapter_config.json) instead
+        of the full pytorch_model.bin."""
+        if getattr(self.args, 'tune_mm_mlp_adapter', False):
             super()._save(output_dir, state_dict)
+            return
+
+        output_dir = output_dir if output_dir is not None else self.args.output_dir
+
+        # Unwrap from DeepSpeed / DDP wrappers to get the raw model
+        raw_model = self.model
+        while hasattr(raw_model, 'module'):
+            raw_model = raw_model.module
+
+        # If the unwrapped model is a CLModel wrapping a PeftModel, delegate to
+        # PeftModel.save_pretrained so that load_adapter can consume the checkpoint.
+        if hasattr(raw_model, '_base_model'):
+            from PEFT.peft_model import PeftModel
+            peft_model = raw_model._base_model
+            if isinstance(peft_model, PeftModel):
+                os.makedirs(output_dir, exist_ok=True)
+                logger.info(f"Saving model checkpoint to {output_dir}")
+
+                # 1) Save PEFT adapter weights + adapter_config.json
+                peft_model.save_pretrained(output_dir)
+
+                # 2) Save the base model's config.json so inference can load it via
+                #    AutoConfig.from_pretrained(checkpoint_path).
+                base_config = getattr(peft_model, 'config', None)
+                if base_config is not None and hasattr(base_config, 'save_pretrained'):
+                    base_config.save_pretrained(output_dir)
+
+                # 3) Save tokenizer, training args, and CL extra state
+                if self.tokenizer is not None:
+                    self.tokenizer.save_pretrained(output_dir)
+                torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+
+                # 4) Save method-specific state (e.g. modal_prompt_state.pt)
+                if hasattr(raw_model, '_integration') and raw_model._integration is not None:
+                    if hasattr(raw_model._integration, 'save_extra_state'):
+                        saved = raw_model._integration.save_extra_state(output_dir, model=raw_model)
+                        if saved:
+                            logger.info("CL extra state saved via _integration")
+                return
+
+        super()._save(output_dir, state_dict)

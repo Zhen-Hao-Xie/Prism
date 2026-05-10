@@ -167,6 +167,9 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
             "ft_lora",
             "ewc",
             "zeroshot",
+            "clmoe",
+            "disco",
+            "modal_prompt",
         ],
         help="持续学习方法（须与 checkpoint 训练时 method 一致；与 common/load_model.load_model_for_inference 对齐）",
     )
