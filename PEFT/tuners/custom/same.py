@@ -439,21 +439,29 @@ class SAMELinear(nn.Linear, SAMELayer):
                 return grad
             cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}", None)
             if cov_prev_valid is None:
-                assert 0, (
-                    f"SAME assert(0): missing buffer cov_prev_valid_{adapter} "
-                    f"(layer={self.layer_id}, expert={expert_id}); PEFT buffers not registered."
-                )
+                assert(0)
             if isinstance(cov_prev_valid, torch.Tensor):
                 if cov_prev_valid.numel() != 1:
-                    assert 0, (
-                        f"SAME assert(0): cov_prev_valid_{adapter} must be scalar, "
-                        f"got shape {tuple(cov_prev_valid.shape)} (layer={self.layer_id}, expert={expert_id})."
-                    )
+                   assert(0)
                 if not bool(cov_prev_valid.item()):
+                    # Legitimate: layer had no rank-k covariance at last snapshot (k==0).
+                    # Assert only if tensors look populated but the flag is wrong (stale / partial load).
+                    U_prev = getattr(self, f"cov_U_prev_{adapter}", None)
+                    S_prev = getattr(self, f"cov_S_prev_{adapter}", None)
+                    if U_prev is not None and S_prev is not None:
+                        e = (S_prev ** 2).sum()
+                        if bool((e > 1e-12).item()) or bool((U_prev.abs().sum() > 1e-6).item()):
+                            assert 0, (
+                                f"SAME assert(0): cov_prev_valid_{adapter} is False but cov_*_prev "
+                                f"carry non-trivial data (layer={self.layer_id}, expert={expert_id}); "
+                                f"checkpoint / buffer state inconsistent."
+                            )
                     return grad
             elif not cov_prev_valid:
-                assert(0)
-                return grad
+                assert 0, (
+                    f"SAME assert(0): cov_prev_valid_{adapter} is falsy (non-tensor) "
+                    f"(layer={self.layer_id}, expert={expert_id})."
+                )
 
             device = grad.device
             U_prev = getattr(self, f"cov_U_prev_{adapter}").to(device)
@@ -463,11 +471,7 @@ class SAMELinear(nn.Linear, SAMELayer):
             energy = S_prev ** 2
             total_energy = energy.sum()
             if total_energy < 1e-10:
-                assert 0, (
-                    f"SAME assert(0): cov_prev_valid True but spectrum empty "
-                    f"(layer={self.layer_id}, adapter={adapter}, expert={expert_id}); "
-                    f"checkpoint restore / snapshot / load_extra_state mismatch."
-                )
+                assert(0)
                 
             cumsum = torch.cumsum(energy, dim=0)
             ratio = cumsum / (total_energy + 1e-10)
@@ -500,11 +504,13 @@ class SAMELinear(nn.Linear, SAMELayer):
             grad.data.copy_(scaled_grad.data)
             grad_norm_after = grad.norm().item()
 
-            # if  grad_norm_before > 1e-10 and int(expert_id)!=self.cur_task:
-            #     print(f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id} | "
-            #         f"k={k}/{len(S_prev)}, mu={mu:.1e} | "
-            #         f"grad_norm: {grad_norm_before:.4f} → {grad_norm_after:.4f} "
-            #         f"(ratio={grad_norm_after/grad_norm_before:.2f}x)")
+            if grad_norm_before > 1e-10:
+                print(
+                    f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id} | "
+                    f"k={k}/{len(S_prev)}, mu={mu:.1e} | "
+                    f"grad_norm: {grad_norm_before:.4f} → {grad_norm_after:.4f} "
+                    f"(ratio={grad_norm_after / (grad_norm_before + 1e-30):.2f}x)"
+                )
             return scaled_grad
         return hook
     

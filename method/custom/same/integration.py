@@ -108,7 +108,8 @@ class SameIntegration(RouterIntegration):
     def on_step_end(self, model, context: CLContext, loss: Optional[torch.Tensor] = None) -> None:
         return
 
-    def on_task_end(self, model, context: CLContext, task_id: int) -> None:
+    def _snapshot_same_carry_buffers(self, model: Any) -> None:
+        """Materialize ``cov_*_prev`` / ``cov_prev_valid`` from running cov buffers (call before saving)."""
         for module in model.modules():
             if hasattr(module, "save_task_covariance_snapshot") and hasattr(module, "active_adapter"):
                 adapter = getattr(module, "active_adapter", None)
@@ -117,6 +118,9 @@ class SameIntegration(RouterIntegration):
                 if not isinstance(adapter, str) or not adapter:
                     continue
                 module.save_task_covariance_snapshot(adapter)
+
+    def on_task_end(self, model, context: CLContext, task_id: int) -> None:
+        self._snapshot_same_carry_buffers(model)
 
     def get_inference_config(self) -> Dict:
         return {"task_num": self.task_num, "feature_dim": self.feature_dim}
@@ -129,6 +133,9 @@ class SameIntegration(RouterIntegration):
         if root is None:
             raise RuntimeError("SameIntegration.save_extra_state: both model and _model_ref are None")
 
+        # Trainer may not invoke ``on_task_end`` before final ``save_model``; freeze carry buffers here.
+        self._snapshot_same_carry_buffers(root)
+
         model_for_buffers = getattr(root, "_base_model", None) or root
         n_carry = 0
         for name, buf in model_for_buffers.named_buffers():
@@ -139,7 +146,7 @@ class SameIntegration(RouterIntegration):
         if n_carry == 0:
             raise RuntimeError(
                 "SameIntegration.save_extra_state: no SAME carry-over buffers "
-                "(cov_*/importance) found on model; refusing empty save."
+                "(cov_*/importance/cov_prev_valid) found on model; refusing empty save."
             )
 
         if not same_state:
