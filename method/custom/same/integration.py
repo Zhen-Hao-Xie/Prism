@@ -68,7 +68,6 @@ class SameIntegration(RouterIntegration):
         self.sync_same_cur_task(model)
 
     def sync_same_cur_task(self, model: Any) -> None:
-        """Keep ``SAMELinear.cur_task`` aligned with ``config.cur_task`` (hook gating)."""
         from PEFT.tuners.custom.same import SAMELinear
 
         ct = int(getattr(self.config, "cur_task", self.cur_task))
@@ -99,7 +98,6 @@ class SameIntegration(RouterIntegration):
         return False
 
     def _reconcile_cov_prev_valid_buffers(self, model: Any) -> None:
-        """If ``cov_S_prev`` has energy but ``cov_prev_valid`` is False, fix flag (checkpoint mismatch)."""
         from PEFT.tuners.custom.same import SAMELinear
 
         for m in model.modules():

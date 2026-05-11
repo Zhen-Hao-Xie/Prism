@@ -787,6 +787,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
     mirror = False
 
     method_cfg = _load_method_config(args.method)
+    _is_zeroshot_infer = str(getattr(args, "method", "") or "").strip().lower() == "zeroshot"
 
     # Inference batch size (for backbone.shared.eval.model_unified -> InferenceEngine)
     infer_bs = getattr(args, "batch_size", None)
@@ -794,7 +795,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
         infer_bs = method_cfg.get("INFER_DEFAULTS", {}).get("batch_size", 1)
     infer_bs = int(infer_bs)
 
-    if str(getattr(args, "method", "") or "").strip().lower() == "zeroshot":
+    if _is_zeroshot_infer:
         # Zeroshot: no checkpoint path; weights only from BASE_MODEL_PATH (--model-base)
         model_path = ""
         checkpoint_task = args.checkpoint_task
@@ -810,11 +811,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
     y = _infer_y_label(args.model_path, checkpoint_task)
     failed: list[int] = []
 
-    _infer_display_model = (
-        str(paths["BASE_MODEL_PATH"])
-        if str(getattr(args, "method", "") or "").strip().lower() == "zeroshot"
-        else model_path
-    )
+    _infer_display_model = str(paths["BASE_MODEL_PATH"]) if _is_zeroshot_infer else model_path
 
     gpus = [int(x.strip()) for x in args.gpus.split(",") if x.strip() != ""]
     if not gpus:
@@ -824,6 +821,8 @@ def cmd_infer(args: argparse.Namespace) -> int:
         task = _get_task_config(args.benchmark, task_id, use_sub_dataset=bool(args.use_sub_dataset))
 
         # output/<backbone>/infer/<benchmark>/<method>/
+        # Zeroshot has no source-task checkpoint; name logs as to_<eval_task> only.
+        _infer_log_stem = f"to_{task_id}_{stamp}" if _is_zeroshot_infer else f"{y}_to_{task_id}_{stamp}"
         log_path = (
             PROJECT_ROOT
             / "output"
@@ -831,7 +830,7 @@ def cmd_infer(args: argparse.Namespace) -> int:
             / "infer"
             / args.benchmark
             / args.method
-            / f"{y}_to_{task_id}_{stamp}.txt"
+            / f"{_infer_log_stem}.txt"
         )
 
         def _do_infer_eval() -> int:
@@ -887,8 +886,13 @@ def cmd_infer(args: argparse.Namespace) -> int:
 
         try:
             _log_line("=" * 60, log_file=log_path, mirror=mirror, lock=log_lock)
+            _infer_hdr = (
+                f"INFER benchmark={args.benchmark} method={args.method} -> x={task_id}"
+                if _is_zeroshot_infer
+                else f"INFER benchmark={args.benchmark} method={args.method} y={y} -> x={task_id}"
+            )
             _log_line(
-                f"INFER benchmark={args.benchmark} method={args.method} y={y} -> x={task_id}",
+                _infer_hdr,
                 log_file=log_path,
                 mirror=mirror,
                 lock=log_lock,

@@ -122,6 +122,34 @@ class RouterIntegration(CLIntegration):
                 getattr(config, "peft_routing_module_name", "SAMELinear"),
             )
         )
+        # Inference logging: CLIP-anchor mixture written to PEFT modules (see ``_batch_prepare``).
+        self._router_mix_log_enabled: bool = bool(getattr(config, "same_print_router", True))
+        self._router_mix_log_max: int = int(getattr(config, "same_print_router_max", 10_000))
+        self._router_mix_log_count: int = 0
+
+    def _maybe_log_router_mixture(
+        self,
+        model: Any,
+        *,
+        sims_t: Optional[torch.Tensor],
+        mix: torch.Tensor,
+        tag: str,
+    ) -> None:
+        if not self._router_mix_log_enabled:
+            return
+        # Only suppress during training steps (grad on). Under ``torch.inference_mode()`` /
+        # ``no_grad()``, still log so inference isn't silent if ``model.training`` was left True.
+        if getattr(model, "training", False) and torch.is_grad_enabled():
+            return
+        self._router_mix_log_count += 1
+        if self._router_mix_log_count > self._router_mix_log_max:
+            return
+        mv = mix.detach().float().cpu().tolist()
+        parts = [f"[RouterIntegration:{tag}] expert_mix={mv}"]
+        if sims_t is not None:
+            sv = sims_t.detach().float().cpu().tolist()
+            parts.append(f"clip_cos_sims={sv}")
+        print(" | ".join(parts), flush=True)
 
     def initialize_model(self, model: Any) -> None:
         self._model_ref = model
@@ -231,15 +259,38 @@ class RouterIntegration(CLIntegration):
         return image_feat, text_feat
 
     def _clip_tokenizer_and_text_tower(self, model: Any) -> Tuple[Optional[Any], Optional[Any]]:
+        """Resolve HiDe-style CLIP tokenizer + text tower across CLModel / PEFT / Llava nesting."""
+
+        def _unwrap_tower(obj: Any) -> Any:
+            if isinstance(obj, (list, tuple)) and len(obj) > 0:
+                return obj[0]
+            return obj
+
+        def _tower_from(m: Any) -> Any:
+            if m is None:
+                return None
+            tt = _unwrap_tower(getattr(m, "text_tower", None))
+            if tt is not None:
+                return tt
+            gt = getattr(m, "get_text_tower", None)
+            if callable(gt):
+                return _unwrap_tower(gt())
+            return None
+
         clip_tokenizer = getattr(model, "clip_tokenizer", None)
-        text_tower = getattr(model, "text_tower", None)
+        text_tower = _tower_from(model)
         _base_model = getattr(model, "_base_model", None)
         if _base_model is not None:
             clip_tokenizer = clip_tokenizer or getattr(_base_model, "clip_tokenizer", None)
-            text_tower = text_tower or getattr(_base_model, "text_tower", None)
+            text_tower = text_tower or _tower_from(_base_model)
             if hasattr(_base_model, "base_model"):
                 clip_tokenizer = clip_tokenizer or getattr(_base_model.base_model, "clip_tokenizer", None)
-                text_tower = text_tower or getattr(_base_model.base_model, "text_tower", None)
+                text_tower = text_tower or _tower_from(_base_model.base_model)
+            if hasattr(_base_model, "model") and text_tower is None:
+                text_tower = _tower_from(getattr(_base_model, "model"))
+            inner = getattr(_base_model, "model", None)
+            if inner is not None and hasattr(inner, "model") and text_tower is None:
+                text_tower = _tower_from(getattr(inner, "model"))
         return clip_tokenizer, text_tower
 
     def _compute_cosine_similarities(
@@ -289,10 +340,21 @@ class RouterIntegration(CLIntegration):
     ) -> None:
         clip_tokenizer, text_tower = self._clip_tokenizer_and_text_tower(model)
         if clip_tokenizer is None or text_tower is None:
+            if self._router_mix_log_enabled and not getattr(
+                self, "_same_router_missing_clip_warned", False
+            ):
+                self._same_router_missing_clip_warned = True
+                print(
+                    "[infer][SAME] Router mixture logging skipped: missing "
+                    f"clip_tokenizer={clip_tokenizer is not None}, "
+                    f"text_tower={text_tower is not None}",
+                    flush=True,
+                )
             return
 
         if input_ids is None or (hasattr(input_ids, "shape") and input_ids.shape[1] <= 1):
             if self._prior_expert_vec is not None:
+                self._maybe_log_router_mixture(model, sims_t=None, mix=self._prior_expert_vec, tag="prior_shortseq")
                 self._write_expert_mix_to_modules(model, self._prior_expert_vec)
             return
 
@@ -315,6 +377,7 @@ class RouterIntegration(CLIntegration):
 
         sims_t = self._compute_cosine_similarities(image_feat, text_feat, device)
         mix = self._similarities_to_mixture(sims_t)
+        self._maybe_log_router_mixture(model, sims_t=sims_t, mix=mix, tag="clip_routing")
         self._write_expert_mix_to_modules(model, mix)
         self._prior_expert_vec = mix.detach()
 

@@ -9,8 +9,6 @@ from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "disco",
-    "--lora_r": "96",
-    "--lora_alpha": "192",
     "--mm_projector_lr": "2e-5",
     "--num_train_epochs": "1",
     "--learning_rate": "2e-4",
@@ -42,4 +40,18 @@ METHOD_CONFIG = {
     "lora_dropout": 0.05,
     "routing_temperature": 0.05,
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
+}
+METHOD_CONFIG_BY_BENCHMARK = {
+    "coin": {
+        "lora_r": 64,
+        "lora_alpha": 128,
+    },
+    "ucit": {
+        "lora_r": 96,
+        "lora_alpha": 192,
+    },
+    "trigap": {
+        "lora_r": 80,
+        "lora_alpha": 160,
+    },
 }

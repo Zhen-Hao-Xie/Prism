@@ -69,8 +69,16 @@ METHOD_CONFIG = {
 
 # METHOD_CONFIG overrides per benchmark (keep inference merges aligned with train)
 METHOD_CONFIG_BY_BENCHMARK = {
+    "coin": {
+        "lora_r": 64,
+        "lora_alpha": 128,
+    },
     "ucit": {
         "lora_r": 96,
         "lora_alpha": 192,
+    },
+    "trigap": {
+        "lora_r": 80,
+        "lora_alpha": 160,
     },
 }

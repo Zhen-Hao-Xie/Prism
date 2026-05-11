@@ -378,6 +378,8 @@ def load_model_for_inference(
     kwargs.pop("task_num", None)
     kwargs.pop("expert_num", None)
     kwargs.pop("benchmark", None)
+    same_print_router = kwargs.pop("same_print_router", None)
+    same_print_router_max = kwargs.pop("same_print_router_max", None)
 
     if device != "cuda":
         kwargs['device_map'] = {"": device}
@@ -471,6 +473,12 @@ def load_model_for_inference(
                         task_num=task_num,
                         benchmark=benchmark,
                         clip_feature_dim=kwargs.get("clip_feature_dim", CLIP_FEATURE_DIM),
+                        same_print_router=bool(same_print_router),
+                        same_print_router_max=(
+                            int(same_print_router_max)
+                            if same_print_router_max is not None
+                            else 10_000
+                        ),
                     )
                     merge_method_config_into(pseudo_args, method=method)
                     merge_benchmark_task_num_into(pseudo_args, benchmark=benchmark)
@@ -576,6 +584,26 @@ def load_model_for_inference(
         context_len = 2048
 
     if isinstance(model, torch.nn.Module):
+        integ = getattr(model, "_integration", None)
+        if integ is not None:
+            from method.custom.specialized_integration import RouterIntegration
+
+            if isinstance(integ, RouterIntegration):
+                env_on = os.getenv("SAME_PRINT_ROUTER", "").strip().lower() in ("1", "true", "yes", "on")
+                integ._router_mix_log_enabled = (
+                    bool(integ._router_mix_log_enabled) or env_on or bool(same_print_router)
+                )
+                if bool(same_print_router) and same_print_router_max is not None:
+                    integ._router_mix_log_max = int(same_print_router_max)
+                elif os.getenv("SAME_PRINT_ROUTER_MAX"):
+                    integ._router_mix_log_max = int(os.getenv("SAME_PRINT_ROUTER_MAX", "10000"))
+                integ._router_mix_log_count = 0
+                if integ._router_mix_log_enabled:
+                    print(
+                        f"[infer] RouterIntegration mixture logging enabled "
+                        f"(max_lines={integ._router_mix_log_max}; --same-print-router or SAME_PRINT_ROUTER=1)",
+                        flush=True,
+                    )
         model.eval()
 
     return tokenizer, model, image_processor, context_len

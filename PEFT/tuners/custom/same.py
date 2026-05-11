@@ -448,8 +448,6 @@ class SAMELinear(nn.Linear, SAMELayer):
                 if cov_prev_valid.numel() != 1:
                    assert(0)
                 if not bool(cov_prev_valid.item()):
-                    # Legitimate: layer had no rank-k covariance at last snapshot (k==0).
-                    # Assert only if tensors look populated but the flag is wrong (stale / partial load).
                     U_prev = getattr(self, f"cov_U_prev_{adapter}", None)
                     S_prev = getattr(self, f"cov_S_prev_{adapter}", None)
                     if U_prev is not None and S_prev is not None:

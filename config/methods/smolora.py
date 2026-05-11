@@ -33,16 +33,27 @@ TRAIN_BATCH_SIZES = {
 }
 
 METHOD_CONFIG = {
-    "cur_task": 0,
     "smolora_expert_num": 8,
     "ins_emb_path": None,
     "smolora_builtin_sentence_ins_emb": True,
     "smolora_sentence_transformer_model": "/root/.cache/modelscope/hub/models/sentence-transformers/all-MiniLM-L6-v2",
     "smolora_clip_no_grad": True,
     "ins_type": 0,
-    "lora_r": 64,
-    "lora_alpha": 128,
     "lora_dropout": 0.05,
     "lora_bias": "none",
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
+}
+METHOD_CONFIG_BY_BENCHMARK = {
+    "coin": {
+        "lora_r": 64,
+        "lora_alpha": 128,
+    },
+    "ucit": {
+        "lora_r": 96,
+        "lora_alpha": 192,
+    },
+    "trigap": {
+        "lora_r": 80,
+        "lora_alpha": 160,
+    },
 }

@@ -16,8 +16,6 @@ TRAIN_FLAG_OVERRIDES = {
     "--method": "clmoe",
     # lora_r=96 is divisible by common task counts (4, 6, 8)
     # lora_alpha follows the original CL-MoE formula: alpha = r * 2
-    "--lora_r": "96",
-    "--lora_alpha": "192",
     "--mm_projector_lr": "2e-5",
     "--num_train_epochs": "1",
     "--learning_rate": "2e-4",
@@ -49,4 +47,18 @@ METHOD_CONFIG = {
     "lora_dropout": 0.05,
     "task_embedding_dim": 64,
     "exclude_module_path_segments": list(EXCLUDE_FOR_LLM_ONLY_INJECTION),
+}
+METHOD_CONFIG_BY_BENCHMARK = {
+    "coin": {
+        "lora_r": 64,
+        "lora_alpha": 128,
+    },
+    "ucit": {
+        "lora_r": 96,
+        "lora_alpha": 192,
+    },
+    "trigap": {
+        "lora_r": 80,
+        "lora_alpha": 160,
+    },
 }

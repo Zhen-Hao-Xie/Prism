@@ -9,7 +9,7 @@ Rule:
 # ===== Argument defaults (train) =====
 TRAIN_DEFAULTS = {
     "benchmark": "trigap",
-    "gpus": "0,1,2,3",
+    "gpus": "0,1,2,3,4,5",
     "port": 29602,
     # True → training subprocess gets PYMCIT_LOG_LEVEL=DEBUG (see run.py / train.py). Does not change batch size.
     "debug": False,
@@ -26,7 +26,7 @@ TRAIN_EXTRA_ARGS: list[str] = []
 # ===== Argument defaults (infer) =====
 INFER_DEFAULTS = {
     "benchmark": "trigap",
-    "gpus": "0,1,2,3",
+    "gpus": "0,1,2,3,4,5",
     "checkpoint_task": "9",
     "checkpoint_suffix": "_llava",
     "stage": "last",

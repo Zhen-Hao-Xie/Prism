@@ -55,10 +55,22 @@ METHOD_CONFIG = {
     "lora_dropout": 0.05,
     "peft_target_modules": "attn_and_ffn",
     "exclude_module_path_segments": EXCLUDE_FOR_LLM_ONLY_INJECTION,
-    "replay_buffer_size": 5000,
+    "replay_buffer_size": 2000,
     "replay_sample_prob": 0.7,
 }
 
+#we reduce the rank as it introduces extra samples which should be stored.
 METHOD_CONFIG_BY_BENCHMARK = {
-    "ucit": {"lora_r": 72, "lora_alpha": 144},#we set r to 64 as it introduces extra samples which should be stored.
+    "coin": {
+        "lora_r": 40,
+        "lora_alpha": 128,
+    },
+    "ucit": {
+        "lora_r": 72,
+        "lora_alpha": 192,
+    },
+    "trigap": {
+        "lora_r": 56,
+        "lora_alpha": 160,
+    },
 }

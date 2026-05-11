@@ -1,5 +1,6 @@
 import json
 import os
+import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -12,6 +13,46 @@ from tqdm import tqdm
 from backbone.shared.multimodal.data_processor import get_model_name_from_path
 
 from backbone.shared.data import InferenceDataset
+
+
+def _describe_infer_sample_for_error(
+    sample: Dict[str, Any],
+    dataset_index: int,
+    image_folder: str,
+) -> str:
+    """Human-readable one-sample dump when inference fails (log / stderr)."""
+    qid = sample.get("question_id", sample.get("id"))
+    text = sample.get("text") or sample.get("question") or ""
+    img = sample.get("image")
+    n_img_mentions = str(text).lower().count("<image>")
+    lines = [
+        f"  [dataset index {dataset_index}] question_id={qid!r}",
+        f"    image field: {img!r}",
+        f"    '<image>' occurrences in text: {n_img_mentions}",
+        f"    has top-level image path: {bool(img)}",
+    ]
+    if image_folder and img:
+        lines.append(f"    image_folder + image: {os.path.join(str(image_folder), str(img))}")
+    t = str(text)
+    if len(t) > 800:
+        t = t[:800] + " ...[truncated]"
+    lines.append(f"    text: {t!r}")
+    return "\n".join(lines)
+
+
+def _log_infer_failure(
+    exc: BaseException,
+    batch_samples: List[Dict[str, Any]],
+    batch_start: int,
+    image_folder: str,
+) -> None:
+    print("\n[infer] Inference raised an exception; failing batch context:", flush=True)
+    print(f"  {type(exc).__name__}: {exc}", flush=True)
+    print(f"  batch sample indices: {batch_start} .. {batch_start + len(batch_samples) - 1}", flush=True)
+    traceback.print_exc()
+    print("[infer] Samples in this batch:", flush=True)
+    for j, sample in enumerate(batch_samples):
+        print(_describe_infer_sample_for_error(sample, batch_start + j, image_folder), flush=True)
 
 
 def _resolved_cl_method(args: Any) -> Optional[str]:
@@ -76,6 +117,8 @@ class InferenceEngine:
             text_tower=getattr(args, "text_tower", None),
             benchmark=getattr(args, "benchmark", None),
             task_num=getattr(args, "cl_task_num", None),
+            same_print_router=getattr(args, "same_print_router", False),
+            same_print_router_max=getattr(args, "same_print_router_max", None),
         )
         return tokenizer, model, image_processor, model_name
 
@@ -106,14 +149,40 @@ class InferenceEngine:
         print(
             f"Evaluating {len(samples)} questions (batch size {batch_size}), saving to {answers_file}")
 
+        image_folder = str(getattr(args, "image_folder", "") or "")
+
         with open(answers_file, "w", encoding="utf-8") as file:
             for i in tqdm(range(0, len(samples), batch_size)):
                 batch_samples = samples[i:i + batch_size]
-                if hasattr(self.adapter, "infer_batch"):
-                    outputs = self.adapter.infer_batch(batch_samples, context)
-                else:
-                    outputs = [self.adapter.infer_one(
-                        sample, context) for sample in batch_samples]
+                try:
+                    if hasattr(self.adapter, "infer_batch"):
+                        outputs = self.adapter.infer_batch(batch_samples, context)
+                    else:
+                        outputs = [
+                            self.adapter.infer_one(sample, context) for sample in batch_samples
+                        ]
+                except Exception as exc:
+                    _log_infer_failure(exc, batch_samples, i, image_folder)
+                    if len(batch_samples) > 1 and hasattr(self.adapter, "infer_one"):
+                        print(
+                            "[infer] Re-running each sample alone to locate the failing row...",
+                            flush=True,
+                        )
+                        for j, sample in enumerate(batch_samples):
+                            try:
+                                self.adapter.infer_one(sample, context)
+                            except Exception:
+                                k = i + j
+                                print(
+                                    f"[infer] Single-sample rerun failed at dataset index {k}:",
+                                    flush=True,
+                                )
+                                print(
+                                    _describe_infer_sample_for_error(sample, k, image_folder),
+                                    flush=True,
+                                )
+                                raise
+                    raise exc
 
                 for sample, output in zip(batch_samples, outputs):
                     result = {
