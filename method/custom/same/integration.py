@@ -65,6 +65,82 @@ class SameIntegration(RouterIntegration):
             p.requires_grad = False
 
         self._setup_same_lora(model)
+        self.sync_same_cur_task(model)
+
+    def sync_same_cur_task(self, model: Any) -> None:
+        """Keep ``SAMELinear.cur_task`` aligned with ``config.cur_task`` (hook gating)."""
+        from PEFT.tuners.custom.same import SAMELinear
+
+        ct = int(getattr(self.config, "cur_task", self.cur_task))
+        self.cur_task = ct
+        for m in model.modules():
+            if isinstance(m, SAMELinear):
+                m.cur_task = ct
+
+    def _any_same_cov_prev_valid(self, model: Any) -> bool:
+        from PEFT.tuners.custom.same import SAMELinear
+
+        for m in model.modules():
+            if not isinstance(m, SAMELinear):
+                continue
+            adapter = getattr(m, "active_adapter", None)
+            if isinstance(adapter, (list, tuple)) and adapter:
+                adapter = adapter[0]
+            if not isinstance(adapter, str) or not adapter:
+                continue
+            buf = getattr(m, f"cov_prev_valid_{adapter}", None)
+            if (
+                buf is not None
+                and isinstance(buf, torch.Tensor)
+                and buf.numel() == 1
+                and bool(buf.detach().cpu().item())
+            ):
+                return True
+        return False
+
+    def _reconcile_cov_prev_valid_buffers(self, model: Any) -> None:
+        """If ``cov_S_prev`` has energy but ``cov_prev_valid`` is False, fix flag (checkpoint mismatch)."""
+        from PEFT.tuners.custom.same import SAMELinear
+
+        for m in model.modules():
+            if not isinstance(m, SAMELinear):
+                continue
+            adapter = getattr(m, "active_adapter", None)
+            if isinstance(adapter, (list, tuple)) and adapter:
+                adapter = adapter[0]
+            if not isinstance(adapter, str) or not adapter:
+                continue
+            buf = getattr(m, f"cov_prev_valid_{adapter}", None)
+            s_prev = getattr(m, f"cov_S_prev_{adapter}", None)
+            if buf is None or s_prev is None:
+                continue
+            if not isinstance(buf, torch.Tensor) or buf.numel() != 1:
+                continue
+            if bool(buf.detach().cpu().item()):
+                continue
+            energy = (s_prev.detach().float() ** 2).sum().item()
+            if energy > 1e-12:
+                setattr(
+                    m,
+                    f"cov_prev_valid_{adapter}",
+                    torch.tensor(True, device=buf.device, dtype=buf.dtype),
+                )
+
+    def on_forward_start(self, model, context: CLContext) -> None:
+        return
+
+    def on_forward_end(self, model, outputs: Any, context: CLContext) -> Any:
+        """After first training forward on task>=1, snapshot prev cov if checkpoint left all flags False."""
+        ct = int(getattr(self.config, "cur_task", getattr(self, "cur_task", 0)))
+        if (
+            ct >= 1
+            and getattr(model, "training", False)
+            and not getattr(self, "_same_fwd_bootstrap_done", False)
+        ):
+            if not self._any_same_cov_prev_valid(model):
+                self._snapshot_same_carry_buffers(model)
+            self._same_fwd_bootstrap_done = True
+        return outputs
 
     def _setup_same_lora(self, model) -> None:
         ensure_peft_extension_registered()
@@ -98,12 +174,6 @@ class SameIntegration(RouterIntegration):
 
     def _find_target_modules(self, model) -> List[str]:
         return collect_peft_target_linear_suffixes(model, self.config)
-
-    def on_forward_start(self, model, context: CLContext) -> None:
-        return
-
-    def on_forward_end(self, model, outputs: Any, context: CLContext) -> Any:
-        return outputs
 
     def on_step_end(self, model, context: CLContext, loss: Optional[torch.Tensor] = None) -> None:
         return
@@ -219,6 +289,10 @@ class SameIntegration(RouterIntegration):
                 if isinstance(state[best], torch.Tensor):
                     buf.data.copy_(state[best].to(dtype=buf.dtype, device=buf.device))
                     copied += 1
+
+        if model is not None:
+            self.sync_same_cur_task(model)
+            self._reconcile_cov_prev_valid_buffers(model)
 
         cov_valid: List[bool] = []
         if target is not None:

@@ -286,6 +286,10 @@ class SAMELayer(LoraLayer):
 
 
 class SAMELinear(nn.Linear, SAMELayer):
+    """LoRA SAME linear; registers curvature hooks on expert A weights."""
+
+    _hook_skip_cov_prev_warned: bool = False
+
     def __init__(
         self,
         adapter_name: str,
@@ -456,6 +460,23 @@ class SAMELinear(nn.Linear, SAMELayer):
                                 f"carry non-trivial data (layer={self.layer_id}, expert={expert_id}); "
                                 f"checkpoint / buffer state inconsistent."
                             )
+                    if not SAMELinear._hook_skip_cov_prev_warned:
+                        _rk = 0
+                        try:
+                            import torch.distributed as dist
+
+                            if dist.is_available() and dist.is_initialized():
+                                _rk = int(dist.get_rank())
+                        except Exception:
+                            pass
+                        if _rk == 0:
+                            SAMELinear._hook_skip_cov_prev_warned = True
+                            print(
+                                "[SAME_HOOK] Skipping curvature block"
+                                f"because cov_prev_valid_{adapter}=False — e.g. layer={self.layer_id} "
+                                f"expert={expert_id}. Most hooks return here until Task0 snapshot + load restore True.",
+                                flush=True,
+                            )
                     return grad
             elif not cov_prev_valid:
                 assert 0, (
@@ -504,13 +525,14 @@ class SAMELinear(nn.Linear, SAMELayer):
             grad.data.copy_(scaled_grad.data)
             grad_norm_after = grad.norm().item()
 
-            if grad_norm_before > 1e-10:
-                print(
-                    f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id} | "
-                    f"k={k}/{len(S_prev)}, mu={mu:.1e} | "
-                    f"grad_norm: {grad_norm_before:.4f} → {grad_norm_after:.4f} "
-                    f"(ratio={grad_norm_after / (grad_norm_before + 1e-30):.2f}x)"
-                )
+            # if grad_norm_before > 1e-10:
+            #     print(
+            #         f"[HOOK] Layer{self.layer_id} {name} Expert{expert_id} | "
+            #         f"k={k}/{len(S_prev)}, mu={mu:.1e} | "
+            #         f"grad_norm: {grad_norm_before:.4f} → {grad_norm_after:.4f} "
+            #         f"(ratio={grad_norm_after / (grad_norm_before + 1e-30):.2f}x)",
+            #         flush=True,
+            #     )
             return scaled_grad
         return hook
     
@@ -684,7 +706,7 @@ class SAMELinear(nn.Linear, SAMELayer):
     def save_task_covariance_snapshot(self, adapter):
         U_curr = getattr(self, f"cov_U_{adapter}").clone()
         S_curr = getattr(self, f"cov_S_{adapter}").clone()
-        k = (S_curr > 1e-6).sum().item()
+        k = (S_curr > 1e-10).sum().item()
         
         if k > 0:
             U_prev = torch.zeros_like(getattr(self, f"cov_U_prev_{adapter}"))
