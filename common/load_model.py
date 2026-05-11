@@ -279,7 +279,31 @@ def load_model_for_train(model_args, data_args, training_args):
         _train_log(f"CLModel wrapper ready | method: {method_name}\n")
         
         # Resume from previous task after PEFT is injected
-        if model_args.previous_task_model_path is not None and os.path.exists(model_args.previous_task_model_path):
+        prev_path = getattr(model_args, "previous_task_model_path", None)
+        if prev_path is not None:
+            prev_path = os.path.expanduser(str(prev_path).strip())
+            tried_paths = [prev_path]
+            # Benchmark configs often say TaskN_llava_lora while train saves TaskN_llava.
+            if not os.path.exists(prev_path) and prev_path.endswith("_llava_lora"):
+                alt = prev_path[: -len("_lora")]
+                tried_paths.append(alt)
+                if os.path.exists(alt):
+                    _train_log(
+                        f"[train] previous_task_model_path {prev_path!r} not found; "
+                        f"using {alt!r} (_llava_lora vs _llava naming).\n"
+                    )
+                    prev_path = alt
+                    model_args.previous_task_model_path = alt
+            if not os.path.exists(prev_path):
+                raise FileNotFoundError(
+                    "[train] previous_task_model_path not found (incremental load required). Tried:\n  "
+                    + "\n  ".join(repr(p) for p in tried_paths)
+                    + "\nFix the path or train the missing previous task before continuing."
+                )
+
+        if model_args.previous_task_model_path is not None and os.path.exists(
+            model_args.previous_task_model_path
+        ):
             _train_log(f"Loading previous-task checkpoint: {model_args.previous_task_model_path}")
             model = load_from_checkpoint(
                 model,

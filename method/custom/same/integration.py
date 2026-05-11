@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
@@ -55,6 +55,28 @@ def ensure_peft_extension_registered() -> None:
         tuner_model_cls=SAMEModel,
     )
     _PEFT_EXT_REGISTERED = True
+
+
+def _state_has_nonempty_anchor_lists(state: Dict[str, Any]) -> bool:
+    ia, ta = state.get("image_anchors"), state.get("text_anchors")
+    return (
+        isinstance(ia, (list, tuple))
+        and isinstance(ta, (list, tuple))
+        and len(ia) > 0
+        and len(ta) > 0
+    )
+
+
+def _normalize_same_state_keys(state: Dict[str, Any]) -> Dict[str, Any]:
+    if not any(isinstance(k, str) and k.startswith("_base_model.") for k in state):
+        return state
+    out: Dict[str, Any] = {}
+    for k, v in state.items():
+        if isinstance(k, str) and k.startswith("_base_model."):
+            out[k[len("_base_model.") :]] = v
+        else:
+            out[k] = v
+    return out
 
 
 @CLMethodFactory.register("same")
@@ -193,6 +215,96 @@ class SameIntegration(RouterIntegration):
     def get_inference_config(self) -> Dict:
         return {"task_num": self.task_num, "feature_dim": self.feature_dim}
 
+    def prepare_training_data(self, data_args: Any, model_args: Any, training_args: Any = None) -> None:
+        super().prepare_training_data(data_args, model_args, training_args)
+        if os.getenv("MCITBOX_SAME_DISABLE_STARTUP_DIAG", "").strip().lower() in ("1", "true", "yes", "on"):
+            return
+        if training_args is None:
+            return
+        lr = getattr(training_args, "local_rank", None)
+        lr = -1 if lr is None else int(lr)
+        if lr not in (-1, 0):
+            return
+        root = self._model_ref
+        if root is None:
+            return
+        self._print_same_startup_diagnostics(root)
+
+    @staticmethod
+    def _tensor_l2(t: torch.Tensor) -> float:
+        return float(torch.linalg.vector_norm(t.detach().float().reshape(-1)).item())
+
+    def _iter_samelinear_named(self, root: Any) -> List[Tuple[str, Any]]:
+        from PEFT.tuners.custom.same import SAMELinear
+
+        core = getattr(root, "_base_model", root)
+        return [(n, m) for n, m in core.named_modules() if isinstance(m, SAMELinear)]
+
+    def _print_same_startup_diagnostics(self, root: Any) -> None:
+        """Rank-0 startup: anchor prototype norms + one SAMELinear layer's expert LoRA A/B norms."""
+        ct = int(getattr(self.config, "cur_task", self.cur_task))
+        raw_idx = os.getenv("MCITBOX_SAME_DIAG_LAYER_IDX", "0").strip()
+        try:
+            layer_pick = int(raw_idx)
+        except ValueError:
+            layer_pick = 0
+
+        print(
+            "\n[SAME][startup diag] "
+            "(disable: MCITBOX_SAME_DISABLE_STARTUP_DIAG=1 | "
+            f"SAMELinear pick: MCITBOX_SAME_DIAG_LAYER_IDX={layer_pick}, "
+            f"cur_task={ct}, task_num={self.task_num})",
+            flush=True,
+        )
+
+        if self.image_anchors is not None:
+            parts_i = [f"{self._tensor_l2(self.image_anchors[i].data):.4f}" for i in range(len(self.image_anchors))]
+            print(f"  image_anchors L2 ({len(parts_i)} tasks): " + " ".join(parts_i), flush=True)
+        else:
+            print("  image_anchors: (none)", flush=True)
+
+        if self.text_anchors is not None:
+            parts_t = [f"{self._tensor_l2(self.text_anchors[i].data):.4f}" for i in range(len(self.text_anchors))]
+            print(f"  text_anchors  L2 ({len(parts_t)} tasks): " + " ".join(parts_t), flush=True)
+        else:
+            print("  text_anchors: (none)", flush=True)
+
+        pairs = self._iter_samelinear_named(root)
+        if not pairs:
+            print("  SAMELinear: (none found under model._base_model)", flush=True)
+            return
+
+        layer_pick = max(0, min(layer_pick, len(pairs) - 1))
+        name, mod = pairs[layer_pick]
+        print(
+            f"  SAMELinear[{layer_pick}/{len(pairs)-1}] `{name}` | expert_num={mod.expert_num}",
+            flush=True,
+        )
+
+        adapter = getattr(mod, "active_adapter", None)
+        if isinstance(adapter, (list, tuple)) and adapter:
+            adapter = adapter[0]
+        if not isinstance(adapter, str) or not adapter:
+            print(f"  skip LoRA norms: invalid active_adapter={adapter!r}", flush=True)
+            return
+
+        try:
+            la = mod.lora_A[adapter]
+            lb = mod.lora_B[adapter]
+        except Exception as exc:
+            print(f"  skip LoRA norms: {exc}", flush=True)
+            return
+
+        rows = []
+        for e in range(int(mod.expert_num)):
+            wa = la.loraA[e].mlp.weight
+            wb = lb.loraB[e].mlp.weight
+            rows.append(
+                f"    expert {e}: ||loraA||={self._tensor_l2(wa):.6f}  ||loraB||={self._tensor_l2(wb):.6f}"
+            )
+        print("\n".join(rows), flush=True)
+        print("[SAME][startup diag] done.\n", flush=True)
+
     def save_extra_state(self, output_dir: str, model=None) -> bool:
         os.makedirs(output_dir, exist_ok=True)
         same_state: Dict[str, Any] = dict(self.load_state())
@@ -230,25 +342,48 @@ class SameIntegration(RouterIntegration):
     def load_extra_state(self, load_dir: str, model=None) -> bool:
         from safetensors.torch import load_file
 
-        p: str
-        state: Optional[Dict[str, Any]] = None
         st_path = os.path.join(load_dir, "adapter_model.safetensors")
+        bin_path = os.path.join(load_dir, "same_state.bin")
+
+        state_from_bin: Optional[Dict[str, Any]] = None
+        if os.path.isfile(bin_path):
+            blob = torch.load(bin_path, map_location="cpu")
+            if isinstance(blob, dict):
+                state_from_bin = _normalize_same_state_keys(blob)
+
+        state_from_st: Optional[Dict[str, Any]] = None
         if os.path.isfile(st_path):
             flat = load_file(st_path)
-            state = self._tensor_bundle_to_same_state(flat)
-            if state:
-                p = st_path
+            state_from_st = self._tensor_bundle_to_same_state(flat)
+
+        state: Optional[Dict[str, Any]] = None
+        p: str = ""
+
+        # Prefer same_state.bin for anchor lists when available: it is the full snapshot and
+        # avoids partial mcitbox.same.* slices in adapter_model.safetensors misleading restore.
+        if state_from_bin and _state_has_nonempty_anchor_lists(state_from_bin):
+            state = dict(state_from_bin)
+            p = bin_path
+            if state_from_st:
+                for k, v in state_from_st.items():
+                    if k not in state:
+                        state[k] = v
+        elif state_from_st and _state_has_nonempty_anchor_lists(state_from_st):
+            state = dict(state_from_st)
+            p = st_path
+            if state_from_bin:
+                for k, v in state_from_bin.items():
+                    if k not in state:
+                        state[k] = v
+        elif state_from_bin:
+            state = dict(state_from_bin)
+            p = bin_path
+        elif state_from_st:
+            state = dict(state_from_st)
+            p = st_path
 
         if not state:
-            p = os.path.join(load_dir, "same_state.bin")
-            if not os.path.exists(p):
-                return False
-            state = torch.load(p, map_location="cpu")
-            if not isinstance(state, dict):
-                return False
-
-        if any(k.startswith("_base_model.") for k in state.keys()):
-            state = {k[len("_base_model."):]: v for k, v in state.items()}
+            return False
 
         target = getattr(model, "_base_model", None) or model if model is not None else None
 
@@ -258,7 +393,16 @@ class SameIntegration(RouterIntegration):
         state_keys = [k for k in state.keys() if isinstance(k, str)]
         tensor_index = _build_same_tensor_index(state)
 
-        anchors_ok = self.restore_state(state, model=model)
+        anchor_lists_ok, aux_ok = self.restore_state(state, model=model)
+
+        if self.image_anchors is not None and not anchor_lists_ok:
+            raise RuntimeError(
+                f"SAME load_extra_state({load_dir}): checkpoint has no non-empty "
+                "image_anchors/text_anchors lists (expected same_state.bin or "
+                "mcitbox.same.image_anchors.* / text_anchors.* in adapter_model.safetensors). "
+                "Older code could mark load as successful after restoring only boundaries/carry buffers, "
+                "leaving random prototypes — re-save from a good checkpoint or fix the adapter files."
+            )
 
         if target is not None:
             for buf_name, buf in target.named_buffers():
@@ -313,7 +457,7 @@ class SameIntegration(RouterIntegration):
                 f"copied={copied}, missing={missing}, tracked={len(tracked_buffers)}"
             )
 
-        ok = copied > 0 or anchors_ok
+        ok = copied > 0 or anchor_lists_ok or aux_ok
         if ok:
             self.print_carryover_restore_summary(p, state, tag="[SAME]")
         return ok

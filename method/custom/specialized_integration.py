@@ -308,7 +308,7 @@ class RouterIntegration(CLIntegration):
                 ia = self.image_anchors[t].to(device)
                 image_sims.append(F.cosine_similarity(image_feat.unsqueeze(1), ia.unsqueeze(0), dim=2).max())
             image_sims_t = torch.stack(image_sims).to(device=device, dtype=torch.float32)
-            return 0.2 * image_sims_t + 0.8 * text_sims_t
+            return 0.8 * image_sims_t + 0.2 * text_sims_t
         return text_sims_t
 
     def _update_running_prototypes(
@@ -437,37 +437,53 @@ class RouterIntegration(CLIntegration):
             out[_LEGACY_PRIOR_KEY] = t.clone()
         return out
 
-    def restore_state(self, state: Dict[str, Any], model: Optional[Any] = None) -> bool:
-        anchors_ok = False
-        prior_ok = False
-        if "image_anchors" in state and isinstance(state["image_anchors"], (list, tuple)) and self.image_anchors is not None:
-            for i, p in enumerate(state["image_anchors"]):
+    def restore_state(self, state: Dict[str, Any], model: Optional[Any] = None) -> Tuple[bool, bool]:
+        """Restore SAME/Router prototypes and auxiliary tensors.
+
+        Returns:
+            ``(anchor_lists_ok, aux_ok)`` — ``anchor_lists_ok`` is True only when **both**
+            ``image_anchors`` and ``text_anchors`` non-empty lists were copied.
+            ``aux_ok`` is True when boundaries and/or the routing prior were restored.
+        """
+        anchor_lists_ok = False
+        aux_ok = False
+
+        ia = state.get("image_anchors")
+        ta = state.get("text_anchors")
+        if (
+            self.image_anchors is not None
+            and self.text_anchors is not None
+            and isinstance(ia, (list, tuple))
+            and isinstance(ta, (list, tuple))
+            and len(ia) > 0
+            and len(ta) > 0
+        ):
+            for i, p in enumerate(ia):
                 if i < len(self.image_anchors) and isinstance(p, torch.Tensor):
                     self.image_anchors[i].data.copy_(
                         p.to(device=self.image_anchors[i].device, dtype=self.image_anchors[i].dtype)
                     )
-            anchors_ok = True
-        if "text_anchors" in state and isinstance(state["text_anchors"], (list, tuple)) and self.text_anchors is not None:
-            for i, p in enumerate(state["text_anchors"]):
+            for i, p in enumerate(ta):
                 if i < len(self.text_anchors) and isinstance(p, torch.Tensor):
                     self.text_anchors[i].data.copy_(
                         p.to(device=self.text_anchors[i].device, dtype=self.text_anchors[i].dtype)
                     )
-            anchors_ok = True
+            anchor_lists_ok = True
+
         if "image_boundary" in state and isinstance(state["image_boundary"], (list, tuple)) and self.image_boundary is not None:
             for i, p in enumerate(state["image_boundary"]):
                 if i < len(self.image_boundary) and isinstance(p, torch.Tensor):
                     self.image_boundary[i].data.copy_(
                         p.to(device=self.image_boundary[i].device, dtype=self.image_boundary[i].dtype)
                     )
-            anchors_ok = True
+            aux_ok = True
         if "text_boundary" in state and isinstance(state["text_boundary"], (list, tuple)) and self.text_boundary is not None:
             for i, p in enumerate(state["text_boundary"]):
                 if i < len(self.text_boundary) and isinstance(p, torch.Tensor):
                     self.text_boundary[i].data.copy_(
                         p.to(device=self.text_boundary[i].device, dtype=self.text_boundary[i].dtype)
                     )
-            anchors_ok = True
+            aux_ok = True
 
         pv = None
         if _PRIOR_VEC_KEY in state and isinstance(state[_PRIOR_VEC_KEY], torch.Tensor):
@@ -476,12 +492,17 @@ class RouterIntegration(CLIntegration):
             pv = state[_LEGACY_PRIOR_KEY]
         if pv is not None:
             self._prior_expert_vec = pv.clone()
-            prior_ok = True
+            aux_ok = True
 
         if model is not None:
             self._model_ref = model
             self.sync_anchors_to_model(model)
-        return anchors_ok or prior_ok
+        return anchor_lists_ok, aux_ok
+
+    def restore_state_any(self, state: Dict[str, Any], model: Optional[Any] = None) -> bool:
+        """True if prototypes, boundaries, or prior were restored."""
+        a_ok, x_ok = self.restore_state(state, model=model)
+        return bool(a_ok or x_ok)
 
     def _same_state_to_tensor_bundle(self, same_state: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         pref = self._MCITBOX_SAME_PREFIX
@@ -562,7 +583,7 @@ class RouterIntegration(CLIntegration):
         state = torch.load(p, map_location="cpu")
         if not isinstance(state, dict):
             return False
-        ok = self.restore_state(state, model=model)
+        ok = self.restore_state_any(state, model=model)
         if ok:
             self.print_carryover_restore_summary(p, state)
         return ok

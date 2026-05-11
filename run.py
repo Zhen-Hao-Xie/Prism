@@ -144,21 +144,41 @@ def _resolve_paths() -> dict[str, str]:
 def _resolve_method_checkpoint(
     checkpoint_dir: str, benchmark: str, method: str, ckpt_basename: str
 ) -> Path:
-    """Prefer Task{n}_llava, then Task{n}_llava_lora, then legacy layout without method folder."""
+    """Pick first existing checkpoint among method layout + legacy layout.
+
+    Benchmark JSON often uses ``TaskN_llava_lora`` while ``run.py train`` saves under
+    ``TaskN_llava`` — resolve both orders so incremental SAME/LoRA load is not skipped.
+    """
     candidates: list[Path] = []
-    primary = _method_checkpoint_path(checkpoint_dir, benchmark, method, ckpt_basename)
-    candidates.append(primary)
-    if ckpt_basename.endswith("_llava") and "_lora" not in ckpt_basename:
+    candidates.append(_method_checkpoint_path(checkpoint_dir, benchmark, method, ckpt_basename))
+    if ckpt_basename.endswith("_llava_lora"):
+        strip_lora = ckpt_basename[: -len("_lora")]
+        candidates.append(_method_checkpoint_path(checkpoint_dir, benchmark, method, strip_lora))
+    elif ckpt_basename.endswith("_llava") and "_lora" not in ckpt_basename:
         legacy_name = ckpt_basename.replace("_llava", "_llava_lora")
         candidates.append(_method_checkpoint_path(checkpoint_dir, benchmark, method, legacy_name))
     candidates.append(_legacy_checkpoint_path(checkpoint_dir, benchmark, ckpt_basename))
-    if ckpt_basename.endswith("_llava") and "_lora" not in ckpt_basename:
+    if ckpt_basename.endswith("_llava_lora"):
+        strip_lora = ckpt_basename[: -len("_lora")]
+        candidates.append(_legacy_checkpoint_path(checkpoint_dir, benchmark, strip_lora))
+    elif ckpt_basename.endswith("_llava") and "_lora" not in ckpt_basename:
         legacy_name = ckpt_basename.replace("_llava", "_llava_lora")
         candidates.append(_legacy_checkpoint_path(checkpoint_dir, benchmark, legacy_name))
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for p in candidates:
+        key = str(p)
+        if key not in seen:
+            seen.add(key)
+            unique.append(p)
     for p in candidates:
         if p.exists():
             return p
-    return primary
+    raise FileNotFoundError(
+        "Checkpoint path does not exist. Tried:\n  "
+        + "\n  ".join(str(p) for p in unique)
+        + f"\n(benchmark={benchmark!r}, method={method!r}, basename={ckpt_basename!r})"
+    )
 
 
 def _ensure_parent(p: Path) -> None:
