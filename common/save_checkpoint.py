@@ -115,8 +115,10 @@ def _save_cl_extra_state(model, output_dir: str):
                 if success:
                     saved = True
                 else:
-                    # Base returns False when no extra file; that is OK.
-                    saved = True
+                    logging.warning(
+                        "save_extra_state returned False for %s (no extra state written).",
+                        type(model._integration).__name__,
+                    )
         except Exception as e:
             logging.exception("save_extra_state failed: %s", e)
 

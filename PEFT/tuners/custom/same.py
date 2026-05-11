@@ -33,13 +33,21 @@ if is_bnb_available():
     import bitsandbytes as bnb
 
 
+# PyTorch non-reentrant checkpoint runs the user forward from
+# unpack_hook -> _run_fn_with_dynamo_disabled -> recompute_fn (see torch/utils/checkpoint.py).
+_CHECKPOINT_FRAME_NAMES = frozenset({"recompute_fn", "_run_fn_with_dynamo_disabled"})
+
+
 def _same_inside_activation_checkpoint_recompute() -> bool:
+    """True when executing the activation-checkpoint *recompute* forward (not the first pass)."""
     frame = inspect.currentframe()
+    depth = 0
     try:
         f = frame
-        while f is not None:
+        while f is not None and depth < 256:
+            depth += 1
             co = f.f_code
-            if co.co_name == "recompute_fn":
+            if co.co_name in _CHECKPOINT_FRAME_NAMES:
                 path = co.co_filename.replace("\\", "/")
                 if "torch/utils/checkpoint" in path:
                     return True
@@ -369,9 +377,10 @@ class SAMELinear(nn.Linear, SAMELayer):
             for expert_id in range(len(experts)):
                 weight = experts[expert_id].mlp.weight
                 if not weight.requires_grad:
-                    print(f"[WARN] Layer{self.layer_id} Expert{expert_id} {name}.weight requires_grad=False, hook skipped")
-                    assert 0
-                    continue
+                    assert 0, (
+                        f"SAME assert(0): layer={self.layer_id} expert={expert_id} {name}.weight "
+                        f"requires_grad=False — curvature hook cannot run; check DeepSpeed/PEFT freeze."
+                    )
                 hook_fn = self._make_curvature_hook(name, expert_id, adapter_name)
                 weight.register_hook(hook_fn)
 
@@ -388,6 +397,7 @@ class SAMELinear(nn.Linear, SAMELayer):
         total_energy = energy.sum()
         
         if total_energy == 0:
+            assert(0)
             return grad
         
         # Cumulative energy ratio along singular values
@@ -400,6 +410,7 @@ class SAMELinear(nn.Linear, SAMELayer):
         k = min(k, len(S))  # clamp
         
         if k == 0:
+            assert(0)
             return grad
 
         V_parallel = U[:, :k] 
@@ -426,9 +437,22 @@ class SAMELinear(nn.Linear, SAMELayer):
         def hook(grad):
             if not self.training or self.cur_task == 0:
                 return grad
-            cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}", False)
-            if not cov_prev_valid:
-                assert 0
+            cov_prev_valid = getattr(self, f"cov_prev_valid_{adapter}", None)
+            if cov_prev_valid is None:
+                assert 0, (
+                    f"SAME assert(0): missing buffer cov_prev_valid_{adapter} "
+                    f"(layer={self.layer_id}, expert={expert_id}); PEFT buffers not registered."
+                )
+            if isinstance(cov_prev_valid, torch.Tensor):
+                if cov_prev_valid.numel() != 1:
+                    assert 0, (
+                        f"SAME assert(0): cov_prev_valid_{adapter} must be scalar, "
+                        f"got shape {tuple(cov_prev_valid.shape)} (layer={self.layer_id}, expert={expert_id})."
+                    )
+                if not bool(cov_prev_valid.item()):
+                    return grad
+            elif not cov_prev_valid:
+                assert(0)
                 return grad
 
             device = grad.device
@@ -439,8 +463,11 @@ class SAMELinear(nn.Linear, SAMELayer):
             energy = S_prev ** 2
             total_energy = energy.sum()
             if total_energy < 1e-10:
-                assert 0
-                return grad
+                assert 0, (
+                    f"SAME assert(0): cov_prev_valid True but spectrum empty "
+                    f"(layer={self.layer_id}, adapter={adapter}, expert={expert_id}); "
+                    f"checkpoint restore / snapshot / load_extra_state mismatch."
+                )
                 
             cumsum = torch.cumsum(energy, dim=0)
             ratio = cumsum / (total_energy + 1e-10)
@@ -484,7 +511,7 @@ class SAMELinear(nn.Linear, SAMELayer):
 
     
     def _apply_topk_sparsification(self, router_probs, router, k=2):
-        probs = router_probs * (router.to(router_probs.device) ** 2)
+        probs = router_probs * (router.to(router_probs.device))
         #probs = router_probs
         probs = probs / (probs.sum() + 1e-8)
         if k < self.expert_num:
@@ -586,18 +613,16 @@ class SAMELinear(nn.Linear, SAMELayer):
     def _update_activation_metrics(self, routing_probs, x_flat):
         adapter = self.active_adapter
         device = x_flat.device
-        
-
-        batch_util = routing_probs.mean(dim=0)
         util = getattr(self, f"utilization_{adapter}").to(device)
+        udt = util.dtype
+        batch_util = routing_probs.mean(dim=0).to(device=device, dtype=udt)
         new_util = 0.95 * util + 0.05 * batch_util
         setattr(self, f"utilization_{adapter}", new_util.detach())
 
-
         input_energy = torch.norm(x_flat, dim=1, keepdim=True) ** 2
-        weighted_energy = routing_probs * input_energy
+        weighted_energy = routing_probs.to(dtype=udt) * input_energy.to(dtype=udt)
         batch_importance = weighted_energy.mean(dim=0)
-        importance = getattr(self, f"importance_{adapter}").to(device)
+        importance = getattr(self, f"importance_{adapter}").to(device=device, dtype=udt)
         new_importance = 0.95 * importance + 0.05 * batch_importance
         setattr(self, f"importance_{adapter}", new_importance.detach())
 
@@ -606,7 +631,7 @@ class SAMELinear(nn.Linear, SAMELayer):
         scores = self._compute_activation_scores(adapter)
         tau_score = self.tau_score
         current_task_expert = min(self.cur_task, self.expert_num - 1)
-        masks = torch.ones(self.expert_num, device=scores.device)
+        masks = torch.ones(self.expert_num, device=scores.device, dtype=scores.dtype)
         low_score_mask = scores < tau_score
         #make sure a least one expert is activate
         low_score_mask[current_task_expert] = False

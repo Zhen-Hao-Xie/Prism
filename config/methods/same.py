@@ -81,7 +81,7 @@ METHOD_CONFIG_BY_BENCHMARK = {
         "lora_alpha": 96,
     },
     "trigap": {
-        "lora_r": 72,
-        "lora_alpha": 144,
+        "lora_r": 80,
+        "lora_alpha": 160,
     },
 }

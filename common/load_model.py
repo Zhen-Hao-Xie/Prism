@@ -296,6 +296,12 @@ def load_model_for_train(model_args, data_args, training_args):
                     ok = integration.load_extra_state(model_args.previous_task_model_path, model=model)
                     if ok:
                         _train_log("Method extra state restored")
+                    elif str(method_name).lower() == "same":
+                        raise RuntimeError(
+                            "SAME incremental training requires carry-over state "
+                            "(same_state.bin or mcitbox.same.* keys in adapter_model.safetensors) "
+                            f"under {model_args.previous_task_model_path}; load_extra_state returned False."
+                        )
                     else:
                         _train_log("Method extra state not found or failed to load (continuing training)")
     else:

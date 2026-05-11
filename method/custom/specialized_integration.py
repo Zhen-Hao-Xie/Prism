@@ -45,10 +45,13 @@ def read_merge_write_safetensors(
 ) -> bool:
     if not extra:
         return False
-    if not os.path.isfile(safetensors_path):
-        return False
 
     from safetensors.torch import load_file, save_file
+
+    if not os.path.isfile(safetensors_path):
+        # PEFT may only have adapter_model.bin on some runs; still persist SAME extras.
+        save_file(extra, safetensors_path)
+        return True
 
     base: Dict[str, torch.Tensor] = load_file(safetensors_path)
     merged = merge_tensor_bundles(base, extra, on_duplicate_key=on_duplicate_key)
@@ -110,7 +113,7 @@ class RouterIntegration(CLIntegration):
         self._model_ref: Any = None
         self._prior_expert_vec: Optional[torch.Tensor] = None
         self.mixture_logit_scale: float = float(
-            getattr(config, "mixture_logit_scale", getattr(config, "routing_softmax_scale", 21.0))
+            getattr(config, "mixture_logit_scale", getattr(config, "routing_softmax_scale", 24.0))
         )
         self.peft_expert_layer_name: str = str(
             getattr(

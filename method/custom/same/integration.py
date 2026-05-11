@@ -13,6 +13,34 @@ from method.factory import CLMethodFactory
 
 _PEFT_EXT_REGISTERED = False
 
+_SAME_BUFFER_MARKERS = (
+    "cov_U_prev",
+    "cov_S_prev",
+    "importance",
+    "cov_prev_valid",
+)
+
+
+def _canonical_same_buffer_key(name: str) -> str:
+    """Align buffer names across CLModel / PeftModel / saved checkpoint key variants."""
+    s = name
+    if s.startswith("_base_model."):
+        s = s[len("_base_model.") :]
+    while "base_model.model.model." in s:
+        s = s.replace("base_model.model.model.", "base_model.model.", 1)
+    return s
+
+
+def _build_same_tensor_index(state: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+    idx: Dict[str, torch.Tensor] = {}
+    for k, v in state.items():
+        if not isinstance(k, str) or not isinstance(v, torch.Tensor):
+            continue
+        if not any(m in k for m in _SAME_BUFFER_MARKERS):
+            continue
+        idx[_canonical_same_buffer_key(k)] = v
+    return idx
+
 
 def ensure_peft_extension_registered() -> None:
     global _PEFT_EXT_REGISTERED
@@ -97,11 +125,22 @@ class SameIntegration(RouterIntegration):
         os.makedirs(output_dir, exist_ok=True)
         same_state: Dict[str, Any] = dict(self.load_state())
 
-        if self._model_ref is not None:
-            model_for_buffers = getattr(self._model_ref, "_base_model", None) or self._model_ref
-            for name, buf in model_for_buffers.named_buffers():
-                if any(k in name for k in ("cov_U_prev", "cov_S_prev", "importance", "cov_prev_valid")):
-                    same_state[name] = buf.detach().cpu().clone()
+        root = model if model is not None else self._model_ref
+        if root is None:
+            raise RuntimeError("SameIntegration.save_extra_state: both model and _model_ref are None")
+
+        model_for_buffers = getattr(root, "_base_model", None) or root
+        n_carry = 0
+        for name, buf in model_for_buffers.named_buffers():
+            if any(m in name for m in _SAME_BUFFER_MARKERS):
+                same_state[name] = buf.detach().cpu().clone()
+                n_carry += 1
+
+        if n_carry == 0:
+            raise RuntimeError(
+                "SameIntegration.save_extra_state: no SAME carry-over buffers "
+                "(cov_*/importance) found on model; refusing empty save."
+            )
 
         if not same_state:
             return False
@@ -142,18 +181,26 @@ class SameIntegration(RouterIntegration):
         missing = 0
         tracked_buffers: List[str] = []
         state_keys = [k for k in state.keys() if isinstance(k, str)]
+        tensor_index = _build_same_tensor_index(state)
 
         anchors_ok = self.restore_state(state, model=model)
 
         if target is not None:
             for buf_name, buf in target.named_buffers():
-                if not any(k in buf_name for k in ("cov_U_prev", "cov_S_prev", "importance", "cov_prev_valid")):
+                if not any(m in buf_name for m in _SAME_BUFFER_MARKERS):
                     continue
 
                 tracked_buffers.append(buf_name)
 
                 if buf_name in state and isinstance(state[buf_name], torch.Tensor):
                     buf.data.copy_(state[buf_name].to(dtype=buf.dtype, device=buf.device))
+                    copied += 1
+                    continue
+
+                ck = _canonical_same_buffer_key(buf_name)
+                src = tensor_index.get(ck)
+                if src is not None:
+                    buf.data.copy_(src.to(dtype=buf.dtype, device=buf.device))
                     copied += 1
                     continue
 
@@ -174,6 +221,12 @@ class SameIntegration(RouterIntegration):
                         cov_valid.append(bool(buf.detach().cpu().item()))
                     except Exception:
                         pass
+
+        if tracked_buffers and copied == 0:
+            raise RuntimeError(
+                f"SAME load_extra_state: checkpoint under {load_dir} has no matching buffer tensors "
+                f"for {len(tracked_buffers)} tracked SAME buffers (key mismatch or empty save)."
+            )
 
         if copied > 0 and cov_valid and sum(cov_valid) == 0:
             raise RuntimeError(
