@@ -832,6 +832,9 @@ def build_registry() -> EvaluatorRegistry:
         DocVQAEvaluator,
         InfographicVQAEvaluator,
         PMCVQAEvaluator,
+        RoadsideEvaluator,
+        ChemVQAEvaluator,
+        FloodNetVQAEvaluator,
     )
     registry.register(ImageNetREvaluator())
     registry.register(ArxivQAEvaluator())
@@ -843,6 +846,9 @@ def build_registry() -> EvaluatorRegistry:
     registry.register(DocVQAEvaluator())
     registry.register(InfographicVQAEvaluator())
     registry.register(PMCVQAEvaluator())
+    registry.register(RoadsideEvaluator())
+    registry.register(ChemVQAEvaluator())
+    registry.register(FloodNetVQAEvaluator())
 
     return registry
 

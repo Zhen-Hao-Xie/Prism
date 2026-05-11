@@ -461,6 +461,9 @@ EVAL_TASK_MAP = {
     "DocVQA": "docvqa",
     "InfographicVQA": "infographicvqa",
     "PMCVQA": "pmcvqa",
+    "Roadside": "roadside",
+    "ChemVQA": "chemvqa",
+    "FloodNetVQA": "floodnetvqa",
 }
 
 

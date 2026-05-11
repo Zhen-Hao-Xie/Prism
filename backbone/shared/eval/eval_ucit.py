@@ -86,5 +86,20 @@ class PMCVQAEvaluator(DeepSeekR1Evaluator):
     name = "pmcvqa"
     help_text = "Evaluate PMCVQA results using DeepSeek R1 script"
 
+
+class RoadsideEvaluator(DeepSeekR1Evaluator):
+    name = "roadside"
+    help_text = "Evaluate Roadside results using DeepSeek R1 script"
+
+
+class ChemVQAEvaluator(DeepSeekR1Evaluator):
+    name = "chemvqa"
+    help_text = "Evaluate ChemVQA results using DeepSeek R1 script"
+
+
+class FloodNetVQAEvaluator(DeepSeekR1Evaluator):
+    name = "floodnetvqa"
+    help_text = "Evaluate FloodNetVQA results using DeepSeek R1 script"
+
 # VizWiz already has an evaluator in eval_unified using m4c, but if we want to use the UCIT caption evaluator,
 # We can subclass it here or let the user decide.
