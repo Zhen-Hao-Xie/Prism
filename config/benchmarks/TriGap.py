@@ -8,7 +8,7 @@ TRIGAP_TASKS = [
     {
         "cur_task": 0,
         "name": "PMCVQA",
-        "train_data_path": f"{TRIGAP_INSTRUCTION_DIR}/PMCVQA/train_standard_4w_sub.json",
+        "train_data_path": f"{TRIGAP_INSTRUCTION_DIR}/PMCVQA/train_standard_4w.json",
         "test_data_path": f"{TRIGAP_INSTRUCTION_DIR}/PMCVQA/test_standard_3k.json",
         "eval_annotation_path": f"{TRIGAP_INSTRUCTION_DIR}/PMCVQA/test_standard_3k.json",
         "output_dir": f"{CHECKPOINT_DIR}/TriGap/Task0_llava",
@@ -129,7 +129,7 @@ TRIGAP_TASKS = [
     {
         "cur_task": 6,
         "name": "Roadside",
-        "train_data_path": f"{TRIGAP_INSTRUCTION_DIR}/Roadside/train_standard_4w_sub.json",
+        "train_data_path": f"{TRIGAP_INSTRUCTION_DIR}/Roadside/train_standard_4w.json",
         "test_data_path": f"{TRIGAP_INSTRUCTION_DIR}/Roadside/test_standard_3k.json",
         "eval_annotation_path": f"{TRIGAP_INSTRUCTION_DIR}/Roadside/test_standard_3k.json",
         "output_dir": f"{CHECKPOINT_DIR}/TriGap/Task6_llava",
@@ -149,7 +149,7 @@ TRIGAP_TASKS = [
     {
         "cur_task": 7,
         "name": "ChemVQA",
-        "train_data_path": f"{TRIGAP_INSTRUCTION_DIR}/ChemVQA/train_standard_4w_sub.json",
+        "train_data_path": f"{TRIGAP_INSTRUCTION_DIR}/ChemVQA/train_standard_4w.json",
         "test_data_path": f"{TRIGAP_INSTRUCTION_DIR}/ChemVQA/test_standard_3k.json",
         "eval_annotation_path": f"{TRIGAP_INSTRUCTION_DIR}/ChemVQA/test_standard_3k.json",
         "output_dir": f"{CHECKPOINT_DIR}/TriGap/Task7_llava",

@@ -574,7 +574,7 @@ class SAMELinear(nn.Linear, SAMELayer):
                 router_logits = self.lora_router[self.active_adapter](x.view(-1, x.size(-1)))/self.expert_num
                 g_phi = F.softmax(router_logits, dim=-1)
                 g_phi_mean = g_phi.mean(dim=0)
-                final_routing = self._apply_topk_sparsification(g_phi_mean, self.router, k=1).to(dtype=x.dtype)
+                final_routing = self._apply_topk_sparsification(g_phi_mean, self.router, k=2).to(dtype=x.dtype)
 
             final_routing = final_routing.to(self.lora_A[self.active_adapter].loraA[0].weight.dtype)
             lora_a_output = self.lora_A[self.active_adapter](x, final_routing)

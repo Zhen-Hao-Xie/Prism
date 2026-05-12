@@ -112,9 +112,7 @@ class RouterIntegration(CLIntegration):
 
         self._model_ref: Any = None
         self._prior_expert_vec: Optional[torch.Tensor] = None
-        self.mixture_logit_scale: float = float(
-            getattr(config, "mixture_logit_scale", getattr(config, "routing_softmax_scale", 24.0))
-        )
+        self.mixture_logit_scale: float = float(getattr(config, "mixture_logit_scale", getattr(config, "routing_softmax_scale", 28.0)))
         self.peft_expert_layer_name: str = str(
             getattr(
                 config,
@@ -308,7 +306,7 @@ class RouterIntegration(CLIntegration):
                 ia = self.image_anchors[t].to(device)
                 image_sims.append(F.cosine_similarity(image_feat.unsqueeze(1), ia.unsqueeze(0), dim=2).max())
             image_sims_t = torch.stack(image_sims).to(device=device, dtype=torch.float32)
-            return 0.8 * image_sims_t + 0.2 * text_sims_t
+            return 0.2 * image_sims_t + 0.8 * text_sims_t
         return text_sims_t
 
     def _update_running_prototypes(
