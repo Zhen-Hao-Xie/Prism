@@ -12,6 +12,7 @@ from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "smolora",
+    "--freeze_mm_mlp_adapter": "True",
     "--lora_r": "64",
     "--lora_alpha": "128",
     "--num_train_epochs": "1",

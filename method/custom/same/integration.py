@@ -21,6 +21,11 @@ _SAME_BUFFER_MARKERS = (
 )
 
 
+def _prism_same_env(name: str, default: str = "") -> str:
+    """Read ``PRISM_SAME_<name>``, falling back to legacy ``MCITBOX_SAME_<name>``."""
+    return os.getenv(f"PRISM_SAME_{name}") or os.getenv(f"MCITBOX_SAME_{name}", default)
+
+
 def _canonical_same_buffer_key(name: str) -> str:
     """Align buffer names across CLModel / PeftModel / saved checkpoint key variants."""
     s = name
@@ -217,7 +222,7 @@ class SameIntegration(RouterIntegration):
 
     def prepare_training_data(self, data_args: Any, model_args: Any, training_args: Any = None) -> None:
         super().prepare_training_data(data_args, model_args, training_args)
-        if os.getenv("MCITBOX_SAME_DISABLE_STARTUP_DIAG", "").strip().lower() in ("1", "true", "yes", "on"):
+        if _prism_same_env("DISABLE_STARTUP_DIAG").strip().lower() in ("1", "true", "yes", "on"):
             return
         if training_args is None:
             return
@@ -243,7 +248,7 @@ class SameIntegration(RouterIntegration):
     def _print_same_startup_diagnostics(self, root: Any) -> None:
         """Rank-0 startup: anchor prototype norms + one SAMELinear layer's expert LoRA A/B norms."""
         ct = int(getattr(self.config, "cur_task", self.cur_task))
-        raw_idx = os.getenv("MCITBOX_SAME_DIAG_LAYER_IDX", "0").strip()
+        raw_idx = _prism_same_env("DIAG_LAYER_IDX", "0").strip()
         try:
             layer_pick = int(raw_idx)
         except ValueError:
@@ -251,8 +256,8 @@ class SameIntegration(RouterIntegration):
 
         print(
             "\n[SAME][startup diag] "
-            "(disable: MCITBOX_SAME_DISABLE_STARTUP_DIAG=1 | "
-            f"SAMELinear pick: MCITBOX_SAME_DIAG_LAYER_IDX={layer_pick}, "
+            "(disable: PRISM_SAME_DISABLE_STARTUP_DIAG=1 | "
+            f"SAMELinear pick: PRISM_SAME_DIAG_LAYER_IDX={layer_pick}, "
             f"cur_task={ct}, task_num={self.task_num})",
             flush=True,
         )
@@ -360,7 +365,7 @@ class SameIntegration(RouterIntegration):
         p: str = ""
 
         # Prefer same_state.bin for anchor lists when available: it is the full snapshot and
-        # avoids partial mcitbox.same.* slices in adapter_model.safetensors misleading restore.
+        # avoids partial prism.same.* slices in adapter_model.safetensors misleading restore.
         if state_from_bin and _state_has_nonempty_anchor_lists(state_from_bin):
             state = dict(state_from_bin)
             p = bin_path
@@ -399,7 +404,7 @@ class SameIntegration(RouterIntegration):
             raise RuntimeError(
                 f"SAME load_extra_state({load_dir}): checkpoint has no non-empty "
                 "image_anchors/text_anchors lists (expected same_state.bin or "
-                "mcitbox.same.image_anchors.* / text_anchors.* in adapter_model.safetensors). "
+                "prism.same.* / mcitbox.same.* anchor keys in adapter_model.safetensors). "
                 "Older code could mark load as successful after restoring only boundaries/carry buffers, "
                 "leaving random prototypes — re-save from a good checkpoint or fix the adapter files."
             )

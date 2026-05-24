@@ -6,6 +6,7 @@ from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "moelora",
+    "--freeze_mm_mlp_adapter": "True",
     "--mm_projector_lr": "2e-5",
     "--num_train_epochs": "1",
     "--learning_rate": "2e-4",

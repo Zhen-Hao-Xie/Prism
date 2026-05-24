@@ -119,11 +119,18 @@ class CLModel(nn.Module):
         return super().to(*args, **kwargs)
     
     def cuda(self, device=None):
-        """CUDA move ``base_model`` then self."""
+        """Move ``base_model`` and wrapper to CUDA; honor an explicit device index."""
         _base_model = object.__getattribute__(self, '_base_model')
+        if device is not None:
+            dev = device if isinstance(device, torch.device) else torch.device(device)
+            if dev.type == "cuda" and dev.index is not None:
+                torch.cuda.set_device(dev)
+            if _base_model is not None:
+                _base_model.to(dev)
+            return super().to(dev)
         if _base_model is not None:
-            _base_model.cuda(device)
-        return super().cuda(device)
+            _base_model.cuda()
+        return super().cuda()
 
     def _get_attr_recursive(self, name):
         """Resolve ``name`` across CLModel / PEFT / inner LLaVA."""

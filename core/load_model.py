@@ -11,6 +11,7 @@ from backbone.shared.model_loading import (
     setup_tokenizer,
     load_clip_tokenizer,
     initialize_multimodal_modules,
+    apply_mm_projector_trainability,
     adjust_precision,
     prepare_model_for_kbit,
     setup_gradient_checkpointing,
@@ -36,6 +37,35 @@ def _train_log(*args, **kwargs) -> None:
     """Log only on local main process (LOCAL_RANK 0 or unset)."""
     if is_local_main_process():
         print(*args, **kwargs)
+
+
+def _resolve_train_cuda_device(training_args) -> torch.device:
+    """Map this process to ``cuda:{local_rank}``; single-process launch uses ``cuda``."""
+    rank = getattr(training_args, "local_rank", None)
+    if rank is None:
+        env = os.environ.get("LOCAL_RANK", "-1")
+        try:
+            rank = int(env)
+        except ValueError:
+            rank = -1
+    else:
+        rank = int(rank)
+    if rank < 0:
+        return torch.device("cuda")
+    return torch.device(f"cuda:{rank}")
+
+
+def _move_model_to_train_device(model: Any, training_args) -> Any:
+    """Place the full model on this rank's GPU (avoid 4 ranks stacking on physical GPU0)."""
+    device = _resolve_train_cuda_device(training_args)
+    if device.type == "cuda" and device.index is not None:
+        torch.cuda.set_device(device)
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    _train_log(
+        f"Moving model to {device} (training_args.local_rank={getattr(training_args, 'local_rank', None)})"
+    )
+    return model.to(device)
 
 
 def _cli_sets_training_flag(flag: str) -> bool:
@@ -323,7 +353,7 @@ def load_model_for_train(model_args, data_args, training_args):
                     elif str(method_name).lower() == "same":
                         raise RuntimeError(
                             "SAME incremental training requires carry-over state "
-                            "(same_state.bin or mcitbox.same.* keys in adapter_model.safetensors) "
+                            "(same_state.bin or prism.same.* keys in adapter_model.safetensors) "
                             f"under {model_args.previous_task_model_path}; load_extra_state returned False."
                         )
                     else:
@@ -335,7 +365,9 @@ def load_model_for_train(model_args, data_args, training_args):
         if callable(_prep):
             _prep(data_args, model_args, training_args)
 
-    model = model.cuda()
+    apply_mm_projector_trainability(model, training_args)
+
+    model = _move_model_to_train_device(model, training_args)
     model.train()
     
     return model, tokenizer, data_args

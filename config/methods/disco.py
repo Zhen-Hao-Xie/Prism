@@ -9,6 +9,7 @@ from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "disco",
+    "--freeze_mm_mlp_adapter": "False",
     "--mm_projector_lr": "2e-5",
     "--num_train_epochs": "1",
     "--learning_rate": "2e-4",
@@ -33,6 +34,7 @@ TRAIN_BATCH_SIZES = {
 }
 
 METHOD_CONFIG = {
+    "peft_target_modules": "ffn",
     "clip_feature_dim": 768,
     "cur_task": 0,
     "lora_r": 96,
@@ -47,8 +49,8 @@ METHOD_CONFIG_BY_BENCHMARK = {
         "lora_alpha": 128,
     },
     "ucit": {
-        "lora_r": 96,
-        "lora_alpha": 192,
+        "lora_r": 48,
+        "lora_alpha": 96,
     },
     "trigap": {
         "lora_r": 80,

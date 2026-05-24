@@ -206,5 +206,4 @@ TRIGAP_TASKS = [
             "needs_conversion": False,
         }
     },
-
 ]

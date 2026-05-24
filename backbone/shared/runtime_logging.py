@@ -22,7 +22,8 @@ logging.addLevelName(TRAIN_LEVEL, "TRAIN")
 
 
 def _env_log_level(default: str = "INFER") -> str:
-    return str(os.environ.get("PYMCIT_LOG_LEVEL", default)).strip().upper()
+    raw = os.environ.get("PYPRISM_LOG_LEVEL") or os.environ.get("PYMCIT_LOG_LEVEL", default)
+    return str(raw).strip().upper()
 
 
 def set_log_level(level: str) -> None:
@@ -43,16 +44,21 @@ def set_log_level(level: str) -> None:
         root.setLevel(getattr(logging, lvl, logging.INFO))
 
 
-def configure_pymcit_logging_from_env(default_when_unset: str = "TRAIN") -> str:
+def configure_prism_logging_from_env(default_when_unset: str = "TRAIN") -> str:
     """
-    Normalize ``PYMCIT_LOG_LEVEL`` on ``os.environ`` and apply it to the stdlib root logger.
+    Normalize ``PYPRISM_LOG_LEVEL`` on ``os.environ`` and apply it to the stdlib root logger.
 
     Training / HF often install handlers before this runs (e.g. at INFO). For ``DEBUG`` we
     lower existing handlers and strip ``_ProjectLevelFilter`` so ``logging.getLogger(...).debug``
     (e.g. custom ``method.custom.*.integration``) actually reaches stderr / tee logs.
+
+    ``PYMCIT_LOG_LEVEL`` is accepted as a legacy alias.
     """
-    level = str(os.environ.get("PYMCIT_LOG_LEVEL", default_when_unset)).strip().upper()
-    os.environ["PYMCIT_LOG_LEVEL"] = level
+    raw = os.environ.get("PYPRISM_LOG_LEVEL") or os.environ.get(
+        "PYMCIT_LOG_LEVEL", default_when_unset
+    )
+    level = str(raw).strip().upper()
+    os.environ["PYPRISM_LOG_LEVEL"] = level
     root = logging.getLogger()
     set_log_level(level)
     if level != "DEBUG":
@@ -72,6 +78,11 @@ def configure_pymcit_logging_from_env(default_when_unset: str = "TRAIN") -> str:
                 if isinstance(f, _ProjectLevelFilter):
                     h.removeFilter(f)
     return level
+
+
+def configure_pymcit_logging_from_env(default_when_unset: str = "TRAIN") -> str:
+    """Legacy alias for :func:`configure_prism_logging_from_env`."""
+    return configure_prism_logging_from_env(default_when_unset)
 
 
 class _ProjectLevelFilter(logging.Filter):
@@ -99,7 +110,7 @@ class _ProjectLevelFilter(logging.Filter):
 
 def get_logger(name: str) -> logging.Logger:
     """
-    Lightweight logger accessor. Respects env `PYMCIT_LOG_LEVEL`.
+    Lightweight logger accessor. Respects env ``PYPRISM_LOG_LEVEL`` (legacy: ``PYMCIT_LOG_LEVEL``).
     """
     logger = logging.getLogger(name)
     # Ensure root has at least one handler/formatter

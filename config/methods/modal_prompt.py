@@ -9,6 +9,7 @@ from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "modal_prompt",
+    "--freeze_mm_mlp_adapter": "True",
     "--num_train_epochs": "10",
     "--learning_rate": "2e-4",
     "--warmup_ratio": "0.03",

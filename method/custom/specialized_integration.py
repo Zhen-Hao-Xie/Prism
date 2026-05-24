@@ -97,7 +97,8 @@ class PromptIntegration(CLIntegration):
         return out
 
 class RouterIntegration(CLIntegration):
-    _MCITBOX_SAME_PREFIX = "mcitbox.same."
+    _PRISM_SAME_PREFIX = "prism.same."
+    _LEGACY_SAME_PREFIXES = ("mcitbox.same.",)
 
     def __init__(self, config: Any):
         super().__init__(config)
@@ -503,7 +504,7 @@ class RouterIntegration(CLIntegration):
         return bool(a_ok or x_ok)
 
     def _same_state_to_tensor_bundle(self, same_state: Dict[str, Any]) -> Dict[str, torch.Tensor]:
-        pref = self._MCITBOX_SAME_PREFIX
+        pref = self._PRISM_SAME_PREFIX
         out: Dict[str, torch.Tensor] = {}
         list_keys = ("image_anchors", "text_anchors", "image_boundary", "text_boundary")
         for lk in list_keys:
@@ -527,37 +528,38 @@ class RouterIntegration(CLIntegration):
         return out
 
     def _tensor_bundle_to_same_state(self, flat: Dict[str, torch.Tensor]) -> Dict[str, Any]:
-        pref = self._MCITBOX_SAME_PREFIX
-        sub = {k: v for k, v in flat.items() if k.startswith(pref)}
-        if not sub:
-            return {}
-        state: Dict[str, Any] = {}
-        list_keys = ("image_anchors", "text_anchors", "image_boundary", "text_boundary")
-        for lk in list_keys:
-            pref_list = f"{pref}{lk}."
-            idx_tensors: Dict[int, torch.Tensor] = {}
-            for k, v in sub.items():
-                if not k.startswith(pref_list):
-                    continue
-                tail = k[len(pref_list) :]
-                if tail.isdigit():
-                    idx_tensors[int(tail)] = v
-            if idx_tensors:
-                mx = max(idx_tensors)
-                lst = [idx_tensors[i] for i in range(mx + 1) if i in idx_tensors]
-                if lst:
-                    state[lk] = lst
-        for pk in ("_prior_expert_vec", "_last_routing"):
-            key = f"{pref}{pk}"
-            if key in sub:
-                state[pk] = sub[key]
-        buf_prefix = f"{pref}buf."
-        for k, v in sub.items():
-            if not k.startswith(buf_prefix):
+        for pref in (self._PRISM_SAME_PREFIX,) + self._LEGACY_SAME_PREFIXES:
+            sub = {k: v for k, v in flat.items() if k.startswith(pref)}
+            if not sub:
                 continue
-            orig = k[len(buf_prefix) :].replace("__DOT__", ".")
-            state[orig] = v
-        return state
+            state: Dict[str, Any] = {}
+            list_keys = ("image_anchors", "text_anchors", "image_boundary", "text_boundary")
+            for lk in list_keys:
+                pref_list = f"{pref}{lk}."
+                idx_tensors: Dict[int, torch.Tensor] = {}
+                for k, v in sub.items():
+                    if not k.startswith(pref_list):
+                        continue
+                    tail = k[len(pref_list) :]
+                    if tail.isdigit():
+                        idx_tensors[int(tail)] = v
+                if idx_tensors:
+                    mx = max(idx_tensors)
+                    lst = [idx_tensors[i] for i in range(mx + 1) if i in idx_tensors]
+                    if lst:
+                        state[lk] = lst
+            for pk in ("_prior_expert_vec", "_last_routing"):
+                key = f"{pref}{pk}"
+                if key in sub:
+                    state[pk] = sub[key]
+            buf_prefix = f"{pref}buf."
+            for k, v in sub.items():
+                if not k.startswith(buf_prefix):
+                    continue
+                orig = k[len(buf_prefix) :].replace("__DOT__", ".")
+                state[orig] = v
+            return state
+        return {}
 
     def print_carryover_restore_summary(
         self, path: str, state: Dict[str, Any], tag: str = "[Router]"

@@ -13,7 +13,7 @@ from transformers.trainer import (
 )
 from typing import Any, Dict, Optional
 
-from common.save_checkpoint import get_mm_adapter_state_maybe_zero_3
+from core.save_checkpoint import get_mm_adapter_state_maybe_zero_3
 from backbone.shared.data import LengthGroupedSampler
 
 

@@ -5,11 +5,13 @@ PROJECT_ROOT = str(Path(__file__).parent.parent.parent.absolute())
 
 BASE_MODEL_PATH = "/root/autodl-tmp/LLaVa"
 CLIP_PATH = "/root/autodl-tmp/CLIP"
-MCIT_ROOT = "/root/autodl-tmp/MCIT"
+PRISM_ROOT = "/root/autodl-tmp/MCIT"
+# Legacy alias (pre-rename checkpoints / docs)
+MCIT_ROOT = PRISM_ROOT
 
 PRETRAIN_MM_PROJECTOR = f"{BASE_MODEL_PATH}/mm_projector.bin"
-INSTRUCTION_DIR = f"{MCIT_ROOT}/instructions"
-IMAGE_FOLDER = f"{MCIT_ROOT}/datasets"
+INSTRUCTION_DIR = f"{PRISM_ROOT}/instructions"
+IMAGE_FOLDER = f"{PRISM_ROOT}/datasets"
 
 CHECKPOINT_DIR = f"{PROJECT_ROOT}/checkpoints"
 RESULT_DIR = f"{PROJECT_ROOT}/results"

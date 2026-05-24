@@ -8,7 +8,7 @@ CL-MoE (Continual Learning Mixture of Experts LoRA):
 - **Forward**: each expert computes its full A->B path independently, then weighted by router gating.
   ``output = Wx + sum_i(softmax(router(x))_i * B_i(A_i(dropout(x))) * alpha/r)``.
 
-This preserves the original CL-MoE (ICLR 2025) architecture within the MCITBox PEFT framework.
+This preserves the original CL-MoE (ICLR 2025) architecture within the PRISM PEFT framework.
 """
 import warnings
 from dataclasses import dataclass, field

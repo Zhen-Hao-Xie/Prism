@@ -1,4 +1,4 @@
-# MCITBox: Multimodal Continual Instruction Tuning Toolbox
+# PRISM: Multimodal Continual Instruction Tuning Toolbox
 
 ---
 
@@ -22,7 +22,7 @@
 
 </div>
 
-Welcome to **MCITBox**, a PyTorch codebase for training and evaluating **multimodal large language models** (built around **LLaVA**) under **continual-learning** settings: multi-task instruction tuning with benchmarks such as **UCIT** and **CoIN**. Methods are organized under `method/custom/` and wired through a shared integration layer (`method/base/`) and factory (`method/factory.py`). Training and inference are driven by a single CLI entrypoint: `run.py`.
+Welcome to **PRISM**, a PyTorch codebase for training and evaluating **multimodal large language models** (built around **LLaVA**) under **continual-learning** settings: multi-task instruction tuning with benchmarks such as **UCIT** and **CoIN**. Methods are organized under `method/custom/` and wired through a shared integration layer (`method/base/`) and factory (`method/factory.py`). Training and inference are driven by a single CLI entrypoint: `run.py`.
 
 ## Introduction
 
@@ -60,11 +60,23 @@ New methods can be added by creating `method/custom/<your_method>/integration.py
 ### Clone
 
 ```bash
-git clone <YOUR_REPO_URL> MCITBox
-cd MCITBox
+git clone <YOUR_REPO_URL> PRISM
+cd PRISM
 ```
 
-Install dependencies according to your environment (PyTorch with CUDA, DeepSpeed, transformers, peft, and other imports required by `backbone/` and `method/`). Align versions with your LLaVA / CLIP checkpoints.
+### Environment
+
+Dependencies are listed under **`requirements/`** (see [`requirements/README.md`](requirements/README.md)).
+
+```bash
+# PyTorch (CUDA 11.8 example) then full train + eval stack
+pip install -r requirements/torch.txt
+pip install -r requirements.txt
+```
+
+Conda users: `conda env create -f environment.yml && conda activate prism`.
+
+Align checkpoint paths with your LLaVA / CLIP weights after install.
 
 ### Paths and assets
 
@@ -72,7 +84,7 @@ Edit **`config/paths/`** so that at minimum these resolve on your system:
 
 - **`BASE_MODEL_PATH`** — LLaVA (or compatible) base weights.
 - **`CLIP_PATH`** — CLIP weights used by the multimodal stack.
-- **`MCIT_ROOT`** — root that contains instructions and dataset layout expected by the benchmarks.
+- **`PRISM_ROOT`** — root that contains instructions and dataset layout expected by the benchmarks.
 - **`CHECKPOINT_DIR`**, **`RESULT_DIR`**, **`LOG_DIR`** — outputs under the project (defaults point inside the repo).
 
 Benchmark JSON annotations and image roots are configured under **`config/benchmarks/`** (e.g. UCIT / CoIN task lists).

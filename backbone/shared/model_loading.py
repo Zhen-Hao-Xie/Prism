@@ -127,6 +127,39 @@ def initialize_multimodal_modules(model, model_args, training_args, data_args, t
     return model, data_args
 
 
+def apply_mm_projector_trainability(model, training_args) -> None:
+    """
+    Apply ``mm_projector`` ``requires_grad`` after CL integration may freeze the full model.
+
+    - ``tune_mm_mlp_adapter``: train projector only (LLaVA projector-tuning mode).
+    - ``freeze_mm_mlp_adapter``: freeze projector (default for most CL methods via ``run.py``).
+    - otherwise: projector parameters are trainable (use with ``--mm_projector_lr``).
+    """
+    inner = getattr(model, "_base_model", model)
+    get_model = getattr(inner, "get_model", None)
+    if get_model is None:
+        return
+    meta = get_model()
+    projector = getattr(meta, "mm_projector", None)
+    if projector is None:
+        return
+
+    tune_only = bool(getattr(training_args, "tune_mm_mlp_adapter", False))
+    freeze = bool(getattr(training_args, "freeze_mm_mlp_adapter", False))
+
+    if tune_only:
+        for _, p in model.named_parameters():
+            p.requires_grad = False
+        for p in projector.parameters():
+            p.requires_grad = True
+    elif freeze:
+        for p in projector.parameters():
+            p.requires_grad = False
+    else:
+        for p in projector.parameters():
+            p.requires_grad = True
+
+
 def adjust_precision(model, training_args):
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer

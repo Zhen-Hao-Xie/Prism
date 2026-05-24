@@ -11,7 +11,7 @@ _project_root = _current_file.parent.parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from common import (
+from core import (
     load_config,
     load_model_for_train,
     save_model,
@@ -29,13 +29,13 @@ def rank0_print(*args):
 def train():
     global local_rank
 
-    # run.py passes PYMCIT_LOG_LEVEL in the subprocess env (see cmd_train). Apply early so
+    # run.py passes PYPRISM_LOG_LEVEL in the subprocess env (see cmd_train). Apply early so
     # third-party imports that configured logging do not leave handlers at INFO/TRAIN-only.
     import os
 
-    from backbone.shared.runtime_logging import configure_pymcit_logging_from_env
+    from backbone.shared.runtime_logging import configure_prism_logging_from_env
 
-    configure_pymcit_logging_from_env("TRAIN")
+    configure_prism_logging_from_env("TRAIN")
 
     from backbone.shared.train.checkpoint_use_reentrant_patch import (
         apply_gradient_checkpoint_use_reentrant_false,

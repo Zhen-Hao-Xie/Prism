@@ -372,8 +372,7 @@ def _build_train_command(
         "True",
         # lora_r / lora_alpha come from config/methods/<method>.py METHOD_CONFIG* via load_model_for_train
         # (HiDe needs lora_r divisible by task_num); do not hard-code here.
-        "--mm_projector_lr",
-        "2e-5",
+        # --freeze_mm_mlp_adapter / --mm_projector_lr: set per method in config/methods/<method>.py TRAIN_FLAG_OVERRIDES
         "--benchmark",
         bm,
         "--task_num",
@@ -695,7 +694,7 @@ def cmd_train(args: argparse.Namespace) -> int:
     # benchmark configs are imported in *this* process
     env = _build_env()
     # Default logging level for subprocesses
-    env["PYMCIT_LOG_LEVEL"] = "DEBUG" if bool(args.debug) else "TRAIN"
+    env["PYPRISM_LOG_LEVEL"] = "DEBUG" if bool(args.debug) else "TRAIN"
     paths = _resolve_paths()
     task_ids = _parse_task_ids(args.tasks)
     stamp = _run_stamp()
@@ -800,7 +799,7 @@ def cmd_train(args: argparse.Namespace) -> int:
 def cmd_infer(args: argparse.Namespace) -> int:
     # benchmark configs are imported in *this* process
     env = _build_env()
-    env["PYMCIT_LOG_LEVEL"] = "DEBUG" if bool(getattr(args, "debug", False)) else "INFER"
+    env["PYPRISM_LOG_LEVEL"] = "DEBUG" if bool(getattr(args, "debug", False)) else "INFER"
     paths = _resolve_paths()
     task_ids = _parse_task_ids(args.tasks)
     stamp = _run_stamp()

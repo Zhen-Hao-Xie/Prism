@@ -38,7 +38,7 @@ def ensure_peft_extension_registered() -> None:
 @CLMethodFactory.register("clmoe")
 class ClmoeIntegration(CLIntegration):
     """
-    CL-MoE integration for MCITBox.
+    CL-MoE integration for PRISM.
 
     Relies entirely on input-dependent routing via the per-layer routers inside
     ``CLMoELinear``.  No task-ID gating or external prototype matching is used.

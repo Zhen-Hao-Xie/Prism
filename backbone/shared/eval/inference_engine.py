@@ -88,7 +88,7 @@ class InferenceEngine:
         self.adapter = adapter
 
     def _load_model(self, args: Any) -> Tuple[Any, Any, Any, str]:
-        from common.load_model import load_model_for_inference
+        from core.load_model import load_model_for_inference
 
         cl_method = _resolved_cl_method(args)
         _m = str(cl_method or "").strip().lower()

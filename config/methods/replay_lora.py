@@ -14,6 +14,7 @@ from PEFT.utils.peft_scope_defaults import EXCLUDE_FOR_LLM_ONLY_INJECTION
 
 TRAIN_FLAG_OVERRIDES = {
     "--method": "replay_lora",
+    "--freeze_mm_mlp_adapter": "True",
     "--mm_projector_lr": "2e-5",
     "--num_train_epochs": "1",
     "--learning_rate": "2e-4",
@@ -55,22 +56,22 @@ METHOD_CONFIG = {
     "lora_dropout": 0.05,
     "peft_target_modules": "attn_and_ffn",
     "exclude_module_path_segments": EXCLUDE_FOR_LLM_ONLY_INJECTION,
-    "replay_buffer_size": 2000,
+    "replay_buffer_size": 180,
     "replay_sample_prob": 0.7,
 }
 
 #we reduce the rank as it introduces extra samples which should be stored.
 METHOD_CONFIG_BY_BENCHMARK = {
     "coin": {
-        "lora_r": 40,
+        "lora_r": 64,
         "lora_alpha": 128,
     },
     "ucit": {
-        "lora_r": 72,
+        "lora_r": 96,
         "lora_alpha": 192,
     },
     "trigap": {
-        "lora_r": 64,
+        "lora_r": 80,
         "lora_alpha": 160,
     },
 }

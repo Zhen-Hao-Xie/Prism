@@ -17,6 +17,9 @@ checkpoints/
 
 *.txt
 *.TXT
+!requirements.txt
+!requirements/**/*.txt
+!requirements/**/*.md
 
 *.jsonl
 *.JSONL

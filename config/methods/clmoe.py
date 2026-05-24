@@ -16,6 +16,7 @@ TRAIN_FLAG_OVERRIDES = {
     "--method": "clmoe",
     # lora_r=96 is divisible by common task counts (4, 6, 8)
     # lora_alpha follows the original CL-MoE formula: alpha = r * 2
+    "--freeze_mm_mlp_adapter": "True",
     "--mm_projector_lr": "2e-5",
     "--num_train_epochs": "1",
     "--learning_rate": "2e-4",
