@@ -24,6 +24,23 @@
 
 Welcome to **PRISM**, a PyTorch codebase for training and evaluating **multimodal large language models** (built around **LLaVA**) under **continual-learning** settings: multi-task instruction tuning with benchmarks such as **UCIT** and **CoIN**. Methods are organized under `method/custom/` and wired through a shared integration layer (`method/base/`) and factory (`method/factory.py`). Training and inference are driven by a single CLI entrypoint: `run.py`.
 
+**If you use any content of this repo for your work, please cite the following bib entries:**
+
+    @article{tang2026prism,
+      title={Prism: A Plug-in Reproducible Infrastructure for Scalable Multimodal Continual Instruction Tuning}, 
+      author={Jun-Tao Tang and Yu-Cheng Shi and Zhen-Hao Xie and Da-Wei Zhou},
+      year={2026},
+      journal = {arXiv preprint arXiv:2605.26110},
+    }
+
+    @inproceedings{xie2026same,
+      title={SAME: Stabilized Mixture-of-Experts for Multimodal Continual Instruction Tuning},
+      author={Xie, Zhen-Hao and Tang, Jun-Tao and Shi, Yu-Cheng and Ye, Han-Jia and Zhan, De-Chuan and Zhou, Da-Wei},
+      booktitle={ICML},
+      year={2026}
+    }
+
+
 ## Introduction
 
 Many deployments require models to absorb **new tasks or domains over time** without full retraining from scratch. This repository provides an experimental framework for **continual instruction tuning** on vision-language models: PEFT adapters (LoRA-style tuners and variants), replay-style pipelines, regularization-based objectives, and mixture-of-experts style extensions, all registered as named **methods** and combined with benchmark-specific data paths and DeepSpeed-backed training scripts under `backbone/shared/`.
