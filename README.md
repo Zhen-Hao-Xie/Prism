@@ -1,17 +1,20 @@
 # PRISM: Multimodal Continual Instruction Tuning Toolbox
 
-<p align="center">
-[![LICENSE](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10+-blue.svg?style=flat-square&logo=python&color=3776AB&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/pytorch-2.0.1-%237732a8?style=flat-square&logo=PyTorch&color=EE4C2C)](https://pytorch.org/)
-[![transformers](https://img.shields.io/badge/transformers-4.31.0-blue?style=flat-square)](https://github.com/huggingface/transformers)
-[![DeepSpeed](https://img.shields.io/badge/deepspeed-0.10.3-green?style=flat-square)](https://www.deepspeed.ai/)
-[![Methods](https://img.shields.io/badge/MCIT%20methods-12-success?style=flat-square)](#methods-implemented)
-[![Benchmarks](https://img.shields.io/badge/benchmarks-CoIN%20%7C%20UCIT%20%7C%20TriGap-blue?style=flat-square)](#datasets)
-[![LLaVA](https://img.shields.io/badge/backbone-LLaVA--1.5-orange?style=flat-square)](https://arxiv.org/abs/2304.08485)
-[![MCIT](https://img.shields.io/badge/Multimodal%20Continual%20Instruction%20Tuning-toolbox-success?style=for-the-badge)](https://arxiv.org/abs/2605.26110)
-![visitors](https://visitor-badge.laobi.icu/badge?page_id=LAMDA-CL.Prism&left_color=green&right_color=red)
-</p>
+<div align="center">
+
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT license"></a>
+<a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10+-blue?style=flat-square&logo=python" alt="Python 3.10+"></a>
+<a href="https://pytorch.org/"><img src="https://img.shields.io/badge/pytorch-2.0.1-EE4C2C?style=flat-square&logo=pytorch" alt="PyTorch 2.0.1"></a>
+<a href="https://github.com/huggingface/transformers"><img src="https://img.shields.io/badge/transformers-4.31.0-blue?style=flat-square" alt="transformers 4.31.0"></a>
+<a href="https://www.deepspeed.ai/"><img src="https://img.shields.io/badge/deepspeed-0.10.3-green?style=flat-square" alt="DeepSpeed 0.10.3"></a>
+<br>
+<a href="#methods-implemented"><img src="https://img.shields.io/badge/MCIT_methods-12-success?style=flat-square" alt="12 MCIT methods"></a>
+<a href="#datasets"><img src="https://img.shields.io/badge/benchmarks-CoIN_UCIT_TriGap-blue?style=flat-square" alt="CoIN UCIT TriGap"></a>
+<a href="https://arxiv.org/abs/2304.08485"><img src="https://img.shields.io/badge/backbone-LLaVA_1.5-orange?style=flat-square" alt="LLaVA-1.5"></a>
+<a href="https://arxiv.org/abs/2605.26110"><img src="https://img.shields.io/badge/MCIT_toolbox-success?style=flat-square" alt="MCIT toolbox"></a>
+<img src="https://visitor-badge.laobi.icu/badge?page_id=LAMDA-CL.Prism&left_color=green&right_color=red" alt="visitors">
+
+</div>
 
 <p align="center">
   <a href="#introduction">📖 Introduction</a> •
