@@ -1,11 +1,16 @@
 # PRISM: Multimodal Continual Instruction Tuning Toolbox
 
+<p align="center">
+  <img src="docs/assets/images/prism-banner.jpg" alt="PRISM" width="90%"/>
+</p>
+
 ---
 
 <p align="center">
   <a href="#introduction">Introduction</a> •
   <a href="#methods-implemented">Methods Implemented</a> •
   <a href="#how-to-use">How To Use</a> •
+  <a href="#datasets">Datasets</a> •
   <a href="#configuration">Configuration</a> •
   <a href="#license">License</a> •
   <a href="#acknowledgments">Acknowledgments</a> •
@@ -22,132 +27,129 @@
 
 </div>
 
-Welcome to **PRISM**, a PyTorch codebase for training and evaluating **multimodal large language models** (built around **LLaVA**) under **continual-learning** settings: multi-task instruction tuning with benchmarks such as **UCIT** and **CoIN**. Methods are organized under `method/custom/` and wired through a shared integration layer (`method/base/`) and factory (`method/factory.py`). Training and inference are driven by a single CLI entrypoint: `run.py`.
+**PRISM** is a plug-in, reproducible toolbox for training and evaluating **multimodal large language models (MLLMs)** under **continual instruction tuning (MCIT)**. A single entry point (`run.py`) orchestrates sequential task training, inference, and evaluation across multiple benchmarks and continual-learning methods.
 
-**If you use any content of this repo for your work, please cite the following bib entries:**
+If you use this repository, please cite:
 
-    @article{tang2026prism,
-      title={Prism: A Plug-in Reproducible Infrastructure for Scalable Multimodal Continual Instruction Tuning}, 
-      author={Jun-Tao Tang and Yu-Cheng Shi and Zhen-Hao Xie and Da-Wei Zhou},
-      year={2026},
-      journal = {arXiv preprint arXiv:2605.26110},
-    }
+```bibtex
+@article{tang2026prism,
+  title={Prism: A Plug-in Reproducible Infrastructure for Scalable Multimodal Continual Instruction Tuning},
+  author={Jun-Tao Tang and Yu-Cheng Shi and Zhen-Hao Xie and Da-Wei Zhou},
+  year={2026},
+  journal={arXiv preprint arXiv:2605.26110},
+}
 
-    @inproceedings{xie2026same,
-      title={SAME: Stabilized Mixture-of-Experts for Multimodal Continual Instruction Tuning},
-      author={Xie, Zhen-Hao and Tang, Jun-Tao and Shi, Yu-Cheng and Ye, Han-Jia and Zhan, De-Chuan and Zhou, Da-Wei},
-      booktitle={ICML},
-      year={2026}
-    }
-
+@inproceedings{xie2026same,
+  title={SAME: Stabilized Mixture-of-Experts for Multimodal Continual Instruction Tuning},
+  author={Xie, Zhen-Hao and Tang, Jun-Tao and Shi, Yu-Cheng and Ye, Han-Jia and Zhan, De-Chuan and Zhou, Da-Wei},
+  booktitle={ICML},
+  year={2026}
+}
+```
 
 ## Introduction
 
-Many deployments require models to absorb **new tasks or domains over time** without full retraining from scratch. This repository provides an experimental framework for **continual instruction tuning** on vision-language models: PEFT adapters (LoRA-style tuners and variants), replay-style pipelines, regularization-based objectives, and mixture-of-experts style extensions, all registered as named **methods** and combined with benchmark-specific data paths and DeepSpeed-backed training scripts under `backbone/shared/`.
+Multimodal large language models (MLLMs) unify diverse vision and vision–language tasks into a shared instruction-following format. In real deployments, however, data and instructions arrive as streams: models must learn new tasks sequentially without erasing earlier capabilities. Standard fine-tuning suffers from catastrophic forgetting under this setting.
 
-Typical workflow:
-
-1. Point paths (base LLaVA weights, CLIP, datasets, checkpoints, logs) at your machine via `config/paths/paths.py`.
-2. Choose **benchmark** (`ucit` / `coin`), **method**, and **task ids** in `config/run_config.py` or on the command line.
-3. Run **`python run.py train …`** for sequential tasks, then **`python run.py infer …`** for evaluation; merge or analyze prediction JSONL with `scripts/eval_merge_jsonl.py` when needed.
+**Multimodal continual instruction tuning (MCIT)** addresses this by training MLLMs on a sequence of instruction-tuning stages while preserving performance on prior tasks. PRISM standardizes this workflow—benchmark definitions, method integrations, checkpoint layout, and evaluation—so that MCIT methods can be compared and extended under one infrastructure.
 
 ## Methods Implemented
 
-Each row is the **`--method`** string (folder under `method/custom/<name>/`). Implementations live in `integration.py` unless noted.
+Each method is selected with `--method <id>` (folder under `method/custom/<id>/`). Below: **abbreviation** — paper title (link).
 
-| Method id | Role |
-|-----------|------|
-| `hide_llava` | HiDe-style continual tuning integration for LLaVA. |
-| `replay_lora` | Replay-assisted LoRA continual learning. |
-| `ft_lora` | Full fine-tuning style training with LoRA hooks. |
-| `olora` | Orthogonal / structured LoRA variant (`O-LoRA`-style integration). |
-| `smolora` | Small LoRA configuration path. |
-| `moelora` | Mixture-of-experts style LoRA routing. |
-| `clmoe` | Continual learning with MoE-oriented wiring. |
-| `modal_prompt` | Modal / prompt-based adaptation. |
-| `ewc` | Elastic Weight Consolidation–style penalty on trainable parameters. |
-| `disco` | Custom PEFT tuner integration (`PEFT/tuners/custom/disco.py`). |
-| `same` | Same-task / baseline-style integration for comparisons. |
-| `zeroshot` | Zero-shot evaluation path without incremental updates. |
+| Abbr. | `--method` | Paper |
+|-------|------------|-------|
+| HiDe | `hide_llava` | [HiDe-LLaVA: Hierarchical Decoupling for Continual Instruction Tuning of Multimodal Large Language Model](https://arxiv.org/abs/2503.12941) |
+| Replay+LoRA | `replay_lora` | [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685) |
+| LoRA | `ft_lora` | [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685) |
+| O-LoRA | `olora` | [Orthogonal Subspace Learning for Language Model Continual Learning](https://arxiv.org/abs/2310.14152) |
+| SMoLoRA | `smolora` | [SMoLoRA: Exploring and Defying Dual Catastrophic Forgetting in Continual Visual Instruction Tuning](https://arxiv.org/abs/2411.13949) |
+| MoELoRA | `moelora` | [CoIN: A Benchmark of Continual Instruction tuNing for Multimodel Large Language Model](https://arxiv.org/abs/2403.08350) |
+| CL-MoE | `clmoe` | [CL-MoE: Enhancing Multimodal Large Language Model with Dual Momentum Mixture-of-Experts for Continual Visual Question Answering](https://arxiv.org/abs/2503.00413) |
+| ModalPrompt | `modal_prompt` | [ModalPrompt: Towards Efficient Multimodal Continual Instruction Tuning with Dual-Modality Guided Prompt](https://arxiv.org/abs/2410.05849) |
+| EWC | `ewc` | [Overcoming catastrophic forgetting in neural networks](https://arxiv.org/abs/1612.00796) |
+| DisCo | `disco` | [Federated Continual Instruction Tuning](https://arxiv.org/abs/2503.12897) |
+| SAME | `same` | [SAME: Stabilized Mixture-of-Experts for Multimodal Continual Instruction Tuning](https://arxiv.org/abs/2602.01990) |
+| Zero-shot | `zeroshot` | [Visual Instruction Tuning](https://arxiv.org/abs/2304.08485) *(infer only)* |
 
-New methods can be added by creating `method/custom/<your_method>/integration.py` and registering with `@CLMethodFactory.register("your_method")`.
+To add a method, implement `method/custom/<your_method>/integration.py` and register with `@CLMethodFactory.register("your_method")`.
 
 ## How To Use
 
-### Clone
+Install dependencies (`pip install -r requirements/torch.txt`, then `pip install -r requirements.txt`), set paths in `config/paths/llava_paths.py`, and edit `config/run_config.py` (and `config/methods/<method>.py` if needed).
+
+After configuration, run a quick **zero-shot** inference on a single task to check that model weights, data paths, and GPUs are set up correctly (`zeroshot` uses the base MLLM checkpoint only):
 
 ```bash
-git clone <YOUR_REPO_URL> PRISM
-cd PRISM
+python run.py infer 0 --method zeroshot
 ```
 
-### Environment
-
-Dependencies are listed under **`requirements/`** (see [`requirements/README.md`](requirements/README.md)).
+Then run continual training and evaluation:
 
 ```bash
-# PyTorch (CUDA 11.8 example) then full train + eval stack
-pip install -r requirements/torch.txt
-pip install -r requirements.txt
+python run.py train 0 1 2
+python run.py infer 0 1 2
 ```
 
-Conda users: `conda env create -f environment.yml && conda activate prism`.
+**`0`, `1`, `2` are task indices** (see `config/benchmarks/<benchmark>.py`). You may train any tasks you need; stage *k* resumes from task *k*−1’s checkpoint. For **inference**, choose the checkpoint in `config/run_config.py`. 
 
-Align checkpoint paths with your LLaVA / CLIP weights after install.
+CLI flags override config; omitted flags use config defaults.
 
-### Paths and assets
+## Datasets
 
-Edit **`config/paths/`** so that at minimum these resolve on your system:
+PRISM currently supports three benchmarks:
 
-- **`BASE_MODEL_PATH`** — LLaVA (or compatible) base weights.
-- **`CLIP_PATH`** — CLIP weights used by the multimodal stack.
-- **`PRISM_ROOT`** — root that contains instructions and dataset layout expected by the benchmarks.
-- **`CHECKPOINT_DIR`**, **`RESULT_DIR`**, **`LOG_DIR`** — outputs under the project (defaults point inside the repo).
+| Benchmark | `--benchmark` | Tasks | Reference |
+|-----------|---------------|-------|-----------|
+| **CoIN** | `coin` | 8 | [Paper](https://arxiv.org/abs/2403.08350) · [Code](https://github.com/zackschen/CoIN/tree/CoIN) |
+| **UCIT** | `ucit` | 6 | [Paper](https://arxiv.org/abs/2503.12941) · [Code](https://github.com/Ghy0501/HiDe-LLaVA) |
+| **TriGap** | `trigap` | 10 | [SAME (ICML 2026)](https://arxiv.org/abs/2602.01990) · [Instructions (Hugging Face)](https://huggingface.co/datasets/JuntaoTang/TriGap) |
 
-Benchmark JSON annotations and image roots are configured under **`config/benchmarks/`** (e.g. UCIT / CoIN task lists).
+**CoIN / UCIT** — Follow the upstream repos to download instruction JSON and images. For **UCIT**, a typical layout under your data root is:
 
-### Train
+Set `PRISM_ROOT` (or the benchmark-specific dirs in `config/benchmarks/UCIT.py`) to point to these folders. **CoIN** follows the same `instructions/` + `datasets/` pattern under `PRISM_ROOT`; see `config/benchmarks/CoIN.py`.
 
-Defaults live in **`config/run_config.py`** (`TRAIN_DEFAULTS`, `TRAIN_EXTRA_ARGS`). Method-specific flags and batch sizes are in **`config/methods/<method>.py`**.
+**TriGap** — A longer, harder benchmark introduced with SAME. Download instruction files from [Hugging Face](https://huggingface.co/datasets/JuntaoTang/TriGap) and the corresponding image data, then organize them as:
 
-```bash
-python run.py train 0 1 2 --benchmark ucit --method ewc --gpus 0,1,2,3
+```
+TriGap/
+├── instructions/
+└── datasets/
 ```
 
-- **`tasks`**: numeric task indices defined per benchmark (CoIN typically `0`–`7`, UCIT `0`–`5`).
-- **`--use-sub-dataset` / `--no-use-sub-dataset`**: for UCIT, toggles `_sub` suffix on dataset JSON paths (see `utils/sub_dataset.py`).
+Set paths in `config/paths/llava_paths.py` and in the benchmark file under `config/benchmarks/`, for example in `TriGap.py`:
 
-Training invokes the backbone train pipeline (`backbone/shared/train/`) with DeepSpeed config from **`config/deepspeed/`** (see `DEEPSPEED_CONFIG` in `config/paths/paths.py`).
-
-### Infer and evaluate
-
-```bash
-python run.py infer 5 --benchmark ucit --method ewc --checkpoint-task 5 --stage last --gpus 0,1
+```python
+TRIGAP_INSTRUCTION_DIR = "/path/to/TriGap/instructions"
+TRIGAP_IMAGE_DIR = "/path/to/TriGap/datasets"
 ```
 
-Adjust **`--checkpoint-task`**, **`--checkpoint-suffix`**, **`--stage`**, **`--conv-mode`**, and **`--temperature`** as needed; inference defaults are merged from **`config/run_config.py`** (`INFER_DEFAULTS`) and **`config/methods/<method>.py`** (`INFER_DEFAULTS`).
+**UCIT subsampled splits** — You can use smaller `_sub` instruction JSON files; pass `--use-sub-dataset` (or set `use_sub_dataset` in `config/run_config.py`) so paths use the `_sub` suffix (see `utils/sub_dataset.py`).
 
-For aggregating or comparing JSONL outputs, use **`scripts/eval_merge_jsonl.py`** (see that script’s CLI for merge modes and metrics).
+**Custom benchmarks** — Add a task list under `config/benchmarks/<name>.py` and register it in `config/benchmarks/__init__.py`.
 
 ## Configuration
 
-| File / area | Purpose |
-|-------------|---------|
-| `config/run_config.py` | Global CLI defaults for `train` / `infer`. |
-| `config/methods/<method>.py` | Per-method training overrides, batch sizes, inference defaults. |
-| `config/benchmarks/` | Benchmark definitions (tasks, paths, eval hooks). |
-| `config/backbone/llava.py` | Backbone id and default conversation template (`DEFAULT_CONV_MODE`). |
-| `config/paths/paths.py` | All filesystem roots for models, data, and outputs. |
+| File | Purpose |
+|------|---------|
+| `config/paths/llava_paths.py` | Model, data, checkpoint, and result paths |
+| `config/run_config.py` | Global `train` / `infer` CLI defaults |
+| `config/methods/<method>.py` | Per-method training flags and batch sizes |
+| `config/benchmarks/<benchmark>.py` | Task definitions and eval hooks |
 
-Key training knobs (memory size, task schedule, etc.) follow each benchmark’s JSON/Python config; optimization hyperparameters are usually split between **`config/methods/*.py`** and the backbone train scripts.
+CLI arguments override file defaults when both are set.
 
 ## License
 
 
-
 ## Acknowledgments
 
+We thank the the following projects for their benchmark and reference implementations used in PRISM:
+
+- [HiDe-LLaVA](https://github.com/Ghy0501/HiDe-LLaVA)
+- [CoIN](https://github.com/zackschen/CoIN/tree/CoIN)
+- [MCITlib](https://github.com/Ghy0501/MCITlib)
 
 ## Contact
 
-If there are any questions, please feel free to  propose new features by opening an issue or contact with the author: **Jun-Tao Tang**([juntao_tang@outlook.com](mailto:juntao_tang@outlook.com)) and **Shi-Yu Cheng**(). Enjoy the code.
+If you have any questions, please feel free to propose new features by opening an issue or contact the authors: Jun-Tao Tang ([juntao.tang@smail.nju.edu.cn](mailto:juntao.tang@smail.nju.edu.cn)), Yu-Cheng Shi ([231250034@smail.nju.edu.cn](mailto:231250034@smail.nju.edu.cn)), and Da-Wei Zhou ([zhoudw@lamda.nju.edu.cn](mailto:zhoudw@lamda.nju.edu.cn)). Enjoy the code.
