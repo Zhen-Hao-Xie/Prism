@@ -15,17 +15,10 @@
 
 <div align="center">
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT license"></a>
-<a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10+-blue?style=flat-square&logo=python" alt="Python 3.10+"></a>
-<a href="https://pytorch.org/"><img src="https://img.shields.io/badge/pytorch-2.0.1-EE4C2C?style=flat-square&logo=pytorch" alt="PyTorch 2.0.1"></a>
-<a href="https://github.com/huggingface/transformers"><img src="https://img.shields.io/badge/transformers-4.31.0-blue?style=flat-square" alt="transformers 4.31.0"></a>
-<a href="https://www.deepspeed.ai/"><img src="https://img.shields.io/badge/deepspeed-0.10.3-green?style=flat-square" alt="DeepSpeed 0.10.3"></a>
-<br>
-<a href="#methods-implemented"><img src="https://img.shields.io/badge/MCIT_methods-12-success?style=flat-square" alt="12 MCIT methods"></a>
-<a href="#datasets"><img src="https://img.shields.io/badge/benchmarks-CoIN_UCIT_TriGap-blue?style=flat-square" alt="CoIN UCIT TriGap"></a>
-<a href="https://arxiv.org/abs/2304.08485"><img src="https://img.shields.io/badge/backbone-LLaVA_1.5-orange?style=flat-square" alt="LLaVA-1.5"></a>
-<a href="https://arxiv.org/abs/2605.26110"><img src="https://img.shields.io/badge/MCIT_toolbox-success?style=flat-square" alt="MCIT toolbox"></a>
 <img src="https://visitor-badge.laobi.icu/badge?page_id=LAMDA-CL.Prism&left_color=green&right_color=red" alt="visitors">
+<a href="https://arxiv.org/abs/2605.26110"><img src="https://img.shields.io/badge/paper-Prism-success?style=flat-square" alt="Prism paper"></a>
+<a href="#datasets"><img src="https://img.shields.io/badge/benchmarks-CoIN_UCIT_TriGap-blue?style=flat-square" alt="CoIN UCIT TriGap"></a>
+<a href="#methods-implemented"><img src="https://img.shields.io/badge/MCIT_methods-12-success?style=flat-square" alt="12 MCIT methods"></a>
 
 </div>
 
@@ -78,7 +71,7 @@ Each method is selected with `--method <id>` (folder under `method/custom/<id>/`
 | EWC | `ewc` | [Overcoming catastrophic forgetting in neural networks](https://arxiv.org/abs/1612.00796) |
 | DisCo | `disco` | [Federated Continual Instruction Tuning](https://arxiv.org/abs/2503.12897) |
 | SAME | `same` | [SAME: Stabilized Mixture-of-Experts for Multimodal Continual Instruction Tuning](https://arxiv.org/abs/2602.01990) |
-| Zero-shot | `zeroshot` | [Visual Instruction Tuning](https://arxiv.org/abs/2304.08485) *(infer only)* |
+| Zero-shot | `zeroshot` | [Visual Instruction Tuning](https://arxiv.org/abs/2304.08485) |
 
 To add a method, implement `method/custom/<your_method>/integration.py` and register with `@CLMethodFactory.register("your_method")`.
 
@@ -121,7 +114,7 @@ A benchmark typically has an **image folder** and an **instruction folder**. JSO
 
 Then set the benchmark paths in `config/benchmarks/<benchmark>.py` (e.g. `TRIGAP_IMAGE_DIR` and `TRIGAP_INSTRUCTION_DIR` in `TriGap.py`).
 
-For quick experiments, you can use smaller **sub-splits**: sample the instruction JSON yourself, save it with a `_sub` suffix (e.g. `train_sub.json`), and set `"use_sub_dataset": true` in `config/run_config.py` (or pass `--use-sub-dataset` on the CLI; UCIT only).
+For quick experiments, you can use smaller **sub-splits**: sample the instruction JSON yourself, save it with a `_sub` suffix (e.g. `train_sub.json`), and set `"use_sub_dataset": true` in `config/run_config.py`.
 
 ---
 

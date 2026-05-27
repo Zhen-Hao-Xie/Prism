@@ -82,9 +82,12 @@ def forward(
         output = output.view(bsz, q_len, -1)
     else:
         qkv = qkv.reshape(bsz, q_len, -1)
-        #qkv, indices, cu_q_lens, max_s = unpad_input(qkv, key_padding_mask)
-        tmp = unpad_input(qkv, key_padding_mask)
-        qkv, indices, cu_q_lens, max_s = tmp[:4]
+        unpad_out = unpad_input(qkv, key_padding_mask)
+        # Older flash-attn returns 4 values; newer versions may return extras (same first 4).
+        if len(unpad_out) == 4:
+            qkv, indices, cu_q_lens, max_s = unpad_out
+        else:
+            qkv, indices, cu_q_lens, max_s = unpad_out[:4]
         qkv = qkv.view(-1, 3, self.num_heads, self.head_dim)
         output_unpad = flash_attn_unpadded_qkvpacked_func(
             qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
