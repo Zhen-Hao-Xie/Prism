@@ -1,4 +1,17 @@
 # PRISM: Multimodal Continual Instruction Tuning Toolbox
+<p align="center">
+  <a href="#introduction">📖 Introduction</a> •
+  <a href="#methods-implemented">🧩 Methods</a> •
+  <a href="#how-to-use">🚀 How To Use</a> •
+  <a href="#datasets">📂 Datasets</a> •
+  <a href="#license">📄 License</a> •
+  <a href="#acknowledgments">🙏 Acknowledgments</a> •
+  <a href="#contact">📧 Contact</a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/images/prism-banner.jpg" alt="PRISM" width="90%"/>
+</p>
 
 <div align="center">
 
@@ -15,20 +28,6 @@
 <img src="https://visitor-badge.laobi.icu/badge?page_id=LAMDA-CL.Prism&left_color=green&right_color=red" alt="visitors">
 
 </div>
-
-<p align="center">
-  <a href="#introduction">📖 Introduction</a> •
-  <a href="#methods-implemented">🧩 Methods</a> •
-  <a href="#how-to-use">🚀 How To Use</a> •
-  <a href="#datasets">📂 Datasets</a> •
-  <a href="#license">📄 License</a> •
-  <a href="#acknowledgments">🙏 Acknowledgments</a> •
-  <a href="#contact">📧 Contact</a>
-</p>
-
-<p align="center">
-  <img src="docs/assets/images/prism-banner.jpg" alt="PRISM" width="90%"/>
-</p>
 
 **PRISM** is a plug-in, reproducible toolbox for training and evaluating **multimodal large language models (MLLMs)** under **continual instruction tuning (MCIT)**. A single entry point (`run.py`) orchestrates sequential task training, inference, and evaluation across multiple benchmarks and continual-learning methods.
 
