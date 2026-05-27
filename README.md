@@ -1,7 +1,16 @@
 # PRISM: Multimodal Continual Instruction Tuning Toolbox
 
 <p align="center">
-  <img src="docs/assets/images/prism-banner.jpg" alt="PRISM" width="90%"/>
+[![LICENSE](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10+-blue.svg?style=flat-square&logo=python&color=3776AB&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/pytorch-2.0.1-%237732a8?style=flat-square&logo=PyTorch&color=EE4C2C)](https://pytorch.org/)
+[![transformers](https://img.shields.io/badge/transformers-4.31.0-blue?style=flat-square)](https://github.com/huggingface/transformers)
+[![DeepSpeed](https://img.shields.io/badge/deepspeed-0.10.3-green?style=flat-square)](https://www.deepspeed.ai/)
+[![Methods](https://img.shields.io/badge/MCIT%20methods-12-success?style=flat-square)](#methods-implemented)
+[![Benchmarks](https://img.shields.io/badge/benchmarks-CoIN%20%7C%20UCIT%20%7C%20TriGap-blue?style=flat-square)](#datasets)
+[![LLaVA](https://img.shields.io/badge/backbone-LLaVA--1.5-orange?style=flat-square)](https://arxiv.org/abs/2304.08485)
+[![MCIT](https://img.shields.io/badge/Multimodal%20Continual%20Instruction%20Tuning-toolbox-success?style=for-the-badge)](https://arxiv.org/abs/2605.26110)
+![visitors](https://visitor-badge.laobi.icu/badge?page_id=LAMDA-CL.Prism&left_color=green&right_color=red)
 </p>
 
 <p align="center">
@@ -15,18 +24,14 @@
 </p>
 
 <p align="center">
-
-[![Python](https://img.shields.io/badge/python-3.10+-blue.svg?style=flat-square&logo=python&color=3776AB&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/pytorch-latest-%237732a8?style=flat-square&logo=PyTorch&color=EE4C2C)](https://pytorch.org/)
-[![DeepSpeed](https://img.shields.io/badge/DeepSpeed-ready-green?style=flat-square)](https://www.deepspeed.ai/)
-
+  <img src="docs/assets/images/prism-banner.jpg" alt="PRISM" width="90%"/>
 </p>
 
 **PRISM** is a plug-in, reproducible toolbox for training and evaluating **multimodal large language models (MLLMs)** under **continual instruction tuning (MCIT)**. A single entry point (`run.py`) orchestrates sequential task training, inference, and evaluation across multiple benchmarks and continual-learning methods.
 
 ---
 
-📚 If you use this repository, please cite:
+If you use this repository, please cite:
 
 ```bibtex
 @article{tang2026prism,
@@ -60,7 +65,7 @@ Each method is selected with `--method <id>` (folder under `method/custom/<id>/`
 
 | Abbr. | `--method` | Paper |
 | :--- | :--- | :--- |
-| HiDe | `hide_llava` | [HiDe-LLaVA: Hierarchical Decoupling for Continual Instruction Tuning of Multimodal Large Language Model](https://arxiv.org/abs/2503.12941) |
+| HiDe-LLaVA | `hide_llava` | [HiDe-LLaVA: Hierarchical Decoupling for Continual Instruction Tuning of Multimodal Large Language Model](https://arxiv.org/abs/2503.12941) |
 | Replay+LoRA | `replay_lora` | [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685) |
 | LoRA | `ft_lora` | [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685) |
 | O-LoRA | `olora` | [Orthogonal Subspace Learning for Language Model Continual Learning](https://arxiv.org/abs/2310.14152) |
@@ -128,7 +133,7 @@ This project is released under the [MIT License](LICENSE).
 
 We thank the following projects for their benchmarks and reference implementations used in PRISM:
 
-- [HiDe-LLaVA](https://github.com/Ghy0501/HiDe-LLaVA)
+- [UCIT](https://github.com/Ghy0501/HiDe-LLaVA)
 - [CoIN](https://github.com/zackschen/CoIN/tree/CoIN)
 - [MCITlib](https://github.com/Ghy0501/MCITlib)
 
