@@ -11,7 +11,6 @@
   <a href="#methods-implemented">Methods Implemented</a> •
   <a href="#how-to-use">How To Use</a> •
   <a href="#datasets">Datasets</a> •
-  <a href="#configuration">Configuration</a> •
   <a href="#license">License</a> •
   <a href="#acknowledgments">Acknowledgments</a> •
   <a href="#contact">Contact</a>
@@ -103,20 +102,21 @@ PRISM currently supports three benchmarks:
 |-----------|---------------|-------|-----------|
 | **CoIN** | `coin` | 8 | [Paper](https://arxiv.org/abs/2403.08350) · [Benchmark](https://github.com/zackschen/CoIN/tree/CoIN) |
 | **UCIT** | `ucit` | 6 | [Paper](https://arxiv.org/abs/2503.12941) · [Benchmark](https://github.com/Ghy0501/HiDe-LLaVA) |
-| **TriGap** | `trigap` | 10 | [SAME (ICML 2026)](https://arxiv.org/abs/2602.01990) · [Benchmark](https://huggingface.co/datasets/JuntaoTang/TriGap) |
+| **TriGap** | `trigap` | 10 | [Paper](https://arxiv.org/abs/2602.01990) · [Benchmark](https://huggingface.co/datasets/JuntaoTang/TriGap) |
 
-A benchmark typically consists of an image folder and an instruction folder. The instruction folder contains the training and test sets, which reference files in the image folder via file paths. Therefore, you need to ensure that the organization of the image files corresponds to the paths specified in the instruction files.
+A benchmark typically has an **image folder** and an **instruction folder**. JSON files in the instruction folder reference image paths, so your on-disk layout must match those paths.
 
-After that, set the benchmark-specific dirs such as 'TRIGAP_IMAGE_DIR' and 'TRIGAP_INSTRUCTION_DIR' in `config/benchmarks" to point to these two folders. 
+Then set the benchmark paths in `config/benchmarks/<benchmark>.py` (e.g. `TRIGAP_IMAGE_DIR` and `TRIGAP_INSTRUCTION_DIR` in `TriGap.py`).
 
-Our framework supports training and testing on partitioned sub-datasets to enable rapid method validation. To use this feature, simply sample the original instruction file yourself, and add a _sub suffix to the filename (e.g., train_sub.json). Then, in config/run_config, set "use_sub_dataset": True.
+For quick experiments, you can use smaller **sub-splits**: sample the instruction JSON yourself, save it with a `_sub` suffix (e.g. `train_sub.json`), and set `"use_sub_dataset": true` in `config/run_config.py` (or pass `--use-sub-dataset` on the CLI; UCIT only).
 
 ## License
 
+This project is released under the [MIT License](LICENSE).
 
 ## Acknowledgments
 
-We thank the the following projects for their benchmark and reference implementations used in PRISM:
+We thank the following projects for their benchmarks and reference implementations used in PRISM:
 
 - [HiDe-LLaVA](https://github.com/Ghy0501/HiDe-LLaVA)
 - [CoIN](https://github.com/zackschen/CoIN/tree/CoIN)
