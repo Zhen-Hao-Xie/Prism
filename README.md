@@ -101,43 +101,15 @@ PRISM currently supports three benchmarks:
 
 | Benchmark | `--benchmark` | Tasks | Reference |
 |-----------|---------------|-------|-----------|
-| **CoIN** | `coin` | 8 | [Paper](https://arxiv.org/abs/2403.08350) · [Code](https://github.com/zackschen/CoIN/tree/CoIN) |
-| **UCIT** | `ucit` | 6 | [Paper](https://arxiv.org/abs/2503.12941) · [Code](https://github.com/Ghy0501/HiDe-LLaVA) |
-| **TriGap** | `trigap` | 10 | [SAME (ICML 2026)](https://arxiv.org/abs/2602.01990) · [Instructions (Hugging Face)](https://huggingface.co/datasets/JuntaoTang/TriGap) |
+| **CoIN** | `coin` | 8 | [Paper](https://arxiv.org/abs/2403.08350) · [Benchmark](https://github.com/zackschen/CoIN/tree/CoIN) |
+| **UCIT** | `ucit` | 6 | [Paper](https://arxiv.org/abs/2503.12941) · [Benchmark](https://github.com/Ghy0501/HiDe-LLaVA) |
+| **TriGap** | `trigap` | 10 | [SAME (ICML 2026)](https://arxiv.org/abs/2602.01990) · [Benchmark](https://huggingface.co/datasets/JuntaoTang/TriGap) |
 
-**CoIN / UCIT** — Follow the upstream repos to download instruction JSON and images. For **UCIT**, a typical layout under your data root is:
+A benchmark typically consists of an image folder and an instruction folder. The instruction folder contains the training and test sets, which reference files in the image folder via file paths. Therefore, you need to ensure that the organization of the image files corresponds to the paths specified in the instruction files.
 
-Set `PRISM_ROOT` (or the benchmark-specific dirs in `config/benchmarks/UCIT.py`) to point to these folders. **CoIN** follows the same `instructions/` + `datasets/` pattern under `PRISM_ROOT`; see `config/benchmarks/CoIN.py`.
+After that, set the benchmark-specific dirs such as 'TRIGAP_IMAGE_DIR' and 'TRIGAP_INSTRUCTION_DIR' in `config/benchmarks" to point to these two folders. 
 
-**TriGap** — A longer, harder benchmark introduced with SAME. Download instruction files from [Hugging Face](https://huggingface.co/datasets/JuntaoTang/TriGap) and the corresponding image data, then organize them as:
-
-```
-TriGap/
-├── instructions/
-└── datasets/
-```
-
-Set paths in `config/paths/llava_paths.py` and in the benchmark file under `config/benchmarks/`, for example in `TriGap.py`:
-
-```python
-TRIGAP_INSTRUCTION_DIR = "/path/to/TriGap/instructions"
-TRIGAP_IMAGE_DIR = "/path/to/TriGap/datasets"
-```
-
-**UCIT subsampled splits** — You can use smaller `_sub` instruction JSON files; pass `--use-sub-dataset` (or set `use_sub_dataset` in `config/run_config.py`) so paths use the `_sub` suffix (see `utils/sub_dataset.py`).
-
-**Custom benchmarks** — Add a task list under `config/benchmarks/<name>.py` and register it in `config/benchmarks/__init__.py`.
-
-## Configuration
-
-| File | Purpose |
-|------|---------|
-| `config/paths/llava_paths.py` | Model, data, checkpoint, and result paths |
-| `config/run_config.py` | Global `train` / `infer` CLI defaults |
-| `config/methods/<method>.py` | Per-method training flags and batch sizes |
-| `config/benchmarks/<benchmark>.py` | Task definitions and eval hooks |
-
-CLI arguments override file defaults when both are set.
+Our framework supports training and testing on partitioned sub-datasets to enable rapid method validation. To use this feature, simply sample the original instruction file yourself, and add a _sub suffix to the filename (e.g., train_sub.json). Then, in config/run_config, set "use_sub_dataset": True.
 
 ## License
 
