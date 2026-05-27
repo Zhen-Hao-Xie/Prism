@@ -4,31 +4,29 @@
   <img src="docs/assets/images/prism-banner.jpg" alt="PRISM" width="90%"/>
 </p>
 
----
-
 <p align="center">
-  <a href="#introduction">Introduction</a> •
-  <a href="#methods-implemented">Methods Implemented</a> •
-  <a href="#how-to-use">How To Use</a> •
-  <a href="#datasets">Datasets</a> •
-  <a href="#license">License</a> •
-  <a href="#acknowledgments">Acknowledgments</a> •
-  <a href="#contact">Contact</a>
+  <a href="#introduction">📖 Introduction</a> •
+  <a href="#methods-implemented">🧩 Methods</a> •
+  <a href="#how-to-use">🚀 How To Use</a> •
+  <a href="#datasets">📂 Datasets</a> •
+  <a href="#license">📄 License</a> •
+  <a href="#acknowledgments">🙏 Acknowledgments</a> •
+  <a href="#contact">📧 Contact</a>
 </p>
 
----
-
-<div align="center">
+<p align="center">
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg?style=flat-square&logo=python&color=3776AB&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/pytorch-latest-%237732a8?style=flat-square&logo=PyTorch&color=EE4C2C)](https://pytorch.org/)
 [![DeepSpeed](https://img.shields.io/badge/DeepSpeed-ready-green?style=flat-square)](https://www.deepspeed.ai/)
 
-</div>
+</p>
 
 **PRISM** is a plug-in, reproducible toolbox for training and evaluating **multimodal large language models (MLLMs)** under **continual instruction tuning (MCIT)**. A single entry point (`run.py`) orchestrates sequential task training, inference, and evaluation across multiple benchmarks and continual-learning methods.
 
-If you use this repository, please cite:
+---
+
+📚 If you use this repository, please cite:
 
 ```bibtex
 @article{tang2026prism,
@@ -46,18 +44,22 @@ If you use this repository, please cite:
 }
 ```
 
-## Introduction
+---
+
+## 📖 Introduction
 
 Multimodal large language models (MLLMs) unify diverse vision and vision–language tasks into a shared instruction-following format. In real deployments, however, data and instructions arrive as streams: models must learn new tasks sequentially without erasing earlier capabilities. Standard fine-tuning suffers from catastrophic forgetting under this setting.
 
 **Multimodal continual instruction tuning (MCIT)** addresses this by training MLLMs on a sequence of instruction-tuning stages while preserving performance on prior tasks. PRISM standardizes this workflow—benchmark definitions, method integrations, checkpoint layout, and evaluation—so that MCIT methods can be compared and extended under one infrastructure.
 
-## Methods Implemented
+---
 
-Each method is selected with `--method <id>` (folder under `method/custom/<id>/`). Below: **abbreviation** — paper title (link).
+## 🧩 Methods Implemented
+
+Each method is selected with `--method <id>` (folder under `method/custom/<id>/`).
 
 | Abbr. | `--method` | Paper |
-|-------|------------|-------|
+| :--- | :--- | :--- |
 | HiDe | `hide_llava` | [HiDe-LLaVA: Hierarchical Decoupling for Continual Instruction Tuning of Multimodal Large Language Model](https://arxiv.org/abs/2503.12941) |
 | Replay+LoRA | `replay_lora` | [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685) |
 | LoRA | `ft_lora` | [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685) |
@@ -73,7 +75,9 @@ Each method is selected with `--method <id>` (folder under `method/custom/<id>/`
 
 To add a method, implement `method/custom/<your_method>/integration.py` and register with `@CLMethodFactory.register("your_method")`.
 
-## How To Use
+---
+
+## 🚀 How To Use
 
 Install dependencies (`pip install -r requirements/torch.txt`, then `pip install -r requirements.txt`), set paths in `config/paths/llava_paths.py`, and edit `config/run_config.py` (and `config/methods/<method>.py` if needed).
 
@@ -90,16 +94,18 @@ python run.py train 0 1 2
 python run.py infer 0 1 2
 ```
 
-**`0`, `1`, `2` are task indices** (see `config/benchmarks/<benchmark>.py`). You may train any tasks you need; stage *k* resumes from task *k*−1’s checkpoint. For **inference**, choose the checkpoint in `config/run_config.py`. 
+> **`0`, `1`, `2` are task indices** (see `config/benchmarks/<benchmark>.py`). You may train any tasks you need; stage *k* resumes from task *k*−1’s checkpoint. For **inference**, choose the checkpoint in `config/run_config.py`.
+>
+> CLI flags override config; omitted flags use config defaults.
 
-CLI flags override config; omitted flags use config defaults.
+---
 
-## Datasets
+## 📂 Datasets
 
 PRISM currently supports three benchmarks:
 
 | Benchmark | `--benchmark` | Tasks | Reference |
-|-----------|---------------|-------|-----------|
+| :--- | :--- | :---: | :--- |
 | **CoIN** | `coin` | 8 | [Paper](https://arxiv.org/abs/2403.08350) · [Benchmark](https://github.com/zackschen/CoIN/tree/CoIN) |
 | **UCIT** | `ucit` | 6 | [Paper](https://arxiv.org/abs/2503.12941) · [Benchmark](https://github.com/Ghy0501/HiDe-LLaVA) |
 | **TriGap** | `trigap` | 10 | [Paper](https://arxiv.org/abs/2602.01990) · [Benchmark](https://huggingface.co/datasets/JuntaoTang/TriGap) |
@@ -110,11 +116,15 @@ Then set the benchmark paths in `config/benchmarks/<benchmark>.py` (e.g. `TRIGAP
 
 For quick experiments, you can use smaller **sub-splits**: sample the instruction JSON yourself, save it with a `_sub` suffix (e.g. `train_sub.json`), and set `"use_sub_dataset": true` in `config/run_config.py` (or pass `--use-sub-dataset` on the CLI; UCIT only).
 
-## License
+---
+
+## 📄 License
 
 This project is released under the [MIT License](LICENSE).
 
-## Acknowledgments
+---
+
+## 🙏 Acknowledgments
 
 We thank the following projects for their benchmarks and reference implementations used in PRISM:
 
@@ -122,6 +132,8 @@ We thank the following projects for their benchmarks and reference implementatio
 - [CoIN](https://github.com/zackschen/CoIN/tree/CoIN)
 - [MCITlib](https://github.com/Ghy0501/MCITlib)
 
-## Contact
+---
+
+## 📧 Contact
 
 If you have any questions, please feel free to propose new features by opening an issue or contact the authors: Jun-Tao Tang ([juntao.tang@smail.nju.edu.cn](mailto:juntao.tang@smail.nju.edu.cn)), Yu-Cheng Shi ([231250034@smail.nju.edu.cn](mailto:231250034@smail.nju.edu.cn)), and Da-Wei Zhou ([zhoudw@lamda.nju.edu.cn](mailto:zhoudw@lamda.nju.edu.cn)). Enjoy the code.

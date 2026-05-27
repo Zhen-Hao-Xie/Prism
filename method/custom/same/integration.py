@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import torch
 
@@ -12,40 +12,6 @@ from backbone.shared.peft_llm_targets import collect_peft_target_linear_suffixes
 from method.factory import CLMethodFactory
 
 _PEFT_EXT_REGISTERED = False
-
-_SAME_BUFFER_MARKERS = (
-    "cov_U_prev",
-    "cov_S_prev",
-    "importance",
-    "cov_prev_valid",
-)
-
-
-def _prism_same_env(name: str, default: str = "") -> str:
-    """Read ``PRISM_SAME_<name>``, falling back to legacy ``MCITBOX_SAME_<name>``."""
-    return os.getenv(f"PRISM_SAME_{name}") or os.getenv(f"MCITBOX_SAME_{name}", default)
-
-
-def _canonical_same_buffer_key(name: str) -> str:
-    """Align buffer names across CLModel / PeftModel / saved checkpoint key variants."""
-    s = name
-    if s.startswith("_base_model."):
-        s = s[len("_base_model.") :]
-    while "base_model.model.model." in s:
-        s = s.replace("base_model.model.model.", "base_model.model.", 1)
-    return s
-
-
-def _build_same_tensor_index(state: Dict[str, Any]) -> Dict[str, torch.Tensor]:
-    idx: Dict[str, torch.Tensor] = {}
-    for k, v in state.items():
-        if not isinstance(k, str) or not isinstance(v, torch.Tensor):
-            continue
-        if not any(m in k for m in _SAME_BUFFER_MARKERS):
-            continue
-        idx[_canonical_same_buffer_key(k)] = v
-    return idx
-
 
 def ensure_peft_extension_registered() -> None:
     global _PEFT_EXT_REGISTERED
@@ -60,28 +26,6 @@ def ensure_peft_extension_registered() -> None:
         tuner_model_cls=SAMEModel,
     )
     _PEFT_EXT_REGISTERED = True
-
-
-def _state_has_nonempty_anchor_lists(state: Dict[str, Any]) -> bool:
-    ia, ta = state.get("image_anchors"), state.get("text_anchors")
-    return (
-        isinstance(ia, (list, tuple))
-        and isinstance(ta, (list, tuple))
-        and len(ia) > 0
-        and len(ta) > 0
-    )
-
-
-def _normalize_same_state_keys(state: Dict[str, Any]) -> Dict[str, Any]:
-    if not any(isinstance(k, str) and k.startswith("_base_model.") for k in state):
-        return state
-    out: Dict[str, Any] = {}
-    for k, v in state.items():
-        if isinstance(k, str) and k.startswith("_base_model."):
-            out[k[len("_base_model.") :]] = v
-        else:
-            out[k] = v
-    return out
 
 
 @CLMethodFactory.register("same")
@@ -220,32 +164,6 @@ class SameIntegration(RouterIntegration):
     def get_inference_config(self) -> Dict:
         return {"task_num": self.task_num, "feature_dim": self.feature_dim}
 
-    def prepare_training_data(self, data_args: Any, model_args: Any, training_args: Any = None) -> None:
-        super().prepare_training_data(data_args, model_args, training_args)
-        if _prism_same_env("DISABLE_STARTUP_DIAG").strip().lower() in ("1", "true", "yes", "on"):
-            return
-        if training_args is None:
-            return
-        lr = getattr(training_args, "local_rank", None)
-        lr = -1 if lr is None else int(lr)
-        if lr not in (-1, 0):
-            return
-        root = self._model_ref
-        if root is None:
-            return
-        self._print_same_startup_diagnostics(root)
-
-    @staticmethod
-    def _tensor_l2(t: torch.Tensor) -> float:
-        return float(torch.linalg.vector_norm(t.detach().float().reshape(-1)).item())
-
-    def _iter_samelinear_named(self, root: Any) -> List[Tuple[str, Any]]:
-        from PEFT.tuners.custom.same import SAMELinear
-
-        core = getattr(root, "_base_model", root)
-        return [(n, m) for n, m in core.named_modules() if isinstance(m, SAMELinear)]
-
-
     def save_extra_state(self, output_dir: str, model=None) -> bool:
         os.makedirs(output_dir, exist_ok=True)
         same_state: Dict[str, Any] = dict(self.load_state())
@@ -258,9 +176,10 @@ class SameIntegration(RouterIntegration):
         self._snapshot_same_carry_buffers(root)
 
         model_for_buffers = getattr(root, "_base_model", None) or root
+        buffer_markers = self.carry_buffer_markers()
         n_carry = 0
         for name, buf in model_for_buffers.named_buffers():
-            if any(m in name for m in _SAME_BUFFER_MARKERS):
+            if any(m in name for m in buffer_markers):
                 same_state[name] = buf.detach().cpu().clone()
                 n_carry += 1
 
@@ -281,48 +200,15 @@ class SameIntegration(RouterIntegration):
         return True
 
     def load_extra_state(self, load_dir: str, model=None) -> bool:
-        from safetensors.torch import load_file
-
-        st_path = os.path.join(load_dir, "adapter_model.safetensors")
-        bin_path = os.path.join(load_dir, "same_state.bin")
-
-        state_from_bin: Optional[Dict[str, Any]] = None
-        if os.path.isfile(bin_path):
-            blob = torch.load(bin_path, map_location="cpu")
-            if isinstance(blob, dict):
-                state_from_bin = _normalize_same_state_keys(blob)
-
-        state_from_st: Optional[Dict[str, Any]] = None
-        if os.path.isfile(st_path):
-            flat = load_file(st_path)
-            state_from_st = self._tensor_bundle_to_same_state(flat)
-
-        state: Optional[Dict[str, Any]] = None
-        p: str = ""
-
-        # Prefer same_state.bin for anchor lists when available: it is the full snapshot and
-        # avoids partial prism.same.* slices in adapter_model.safetensors misleading restore.
-        if state_from_bin and _state_has_nonempty_anchor_lists(state_from_bin):
-            state = dict(state_from_bin)
-            p = bin_path
-            if state_from_st:
-                for k, v in state_from_st.items():
-                    if k not in state:
-                        state[k] = v
-        elif state_from_st and _state_has_nonempty_anchor_lists(state_from_st):
-            state = dict(state_from_st)
-            p = st_path
-            if state_from_bin:
-                for k, v in state_from_bin.items():
-                    if k not in state:
-                        state[k] = v
-        elif state_from_bin:
-            state = dict(state_from_bin)
-            p = bin_path
-        elif state_from_st:
-            state = dict(state_from_st)
-            p = st_path
-
+        state_from_bin, state_from_st, bin_path, st_path = self._read_router_checkpoint_files(
+            load_dir, carryover_bin="same_state.bin"
+        )
+        state, p = self._merge_router_checkpoint_states(
+            state_from_bin,
+            state_from_st,
+            bin_path=bin_path,
+            st_path=st_path,
+        )
         if not state:
             return False
 
@@ -332,7 +218,8 @@ class SameIntegration(RouterIntegration):
         missing = 0
         tracked_buffers: List[str] = []
         state_keys = [k for k in state.keys() if isinstance(k, str)]
-        tensor_index = _build_same_tensor_index(state)
+        buffer_markers = self.carry_buffer_markers()
+        tensor_index = self._build_router_tensor_index(state, buffer_markers)
 
         anchor_lists_ok, aux_ok = self.restore_state(state, model=model)
 
@@ -347,7 +234,7 @@ class SameIntegration(RouterIntegration):
 
         if target is not None:
             for buf_name, buf in target.named_buffers():
-                if not any(m in buf_name for m in _SAME_BUFFER_MARKERS):
+                if not any(m in buf_name for m in buffer_markers):
                     continue
 
                 tracked_buffers.append(buf_name)
@@ -357,7 +244,7 @@ class SameIntegration(RouterIntegration):
                     copied += 1
                     continue
 
-                ck = _canonical_same_buffer_key(buf_name)
+                ck = self._canonical_router_buffer_key(buf_name)
                 src = tensor_index.get(ck)
                 if src is not None:
                     buf.data.copy_(src.to(dtype=buf.dtype, device=buf.device))

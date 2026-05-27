@@ -15,6 +15,14 @@ from method.base.integration import CLIntegration
 _PRIOR_VEC_KEY = "_prior_expert_vec"
 _LEGACY_PRIOR_KEY = "_last_routing"
 
+# Substrings matched when restoring carry-over buffers from checkpoint state.
+_ROUTER_CARRY_BUFFER_MARKERS: Tuple[str, ...] = (
+    "cov_U_prev",
+    "cov_S_prev",
+    "importance",
+    "cov_prev_valid",
+)
+
 
 def merge_tensor_bundles(
     first: Dict[str, torch.Tensor],
@@ -165,6 +173,116 @@ class RouterIntegration(CLIntegration):
         return read_merge_write_safetensors(
             st_path, extra, on_duplicate_key=on_duplicate_key
         )
+
+    @staticmethod
+    def _state_has_nonempty_anchor_lists(state: Dict[str, Any]) -> bool:
+        ia, ta = state.get("image_anchors"), state.get("text_anchors")
+        return (
+            isinstance(ia, (list, tuple))
+            and isinstance(ta, (list, tuple))
+            and len(ia) > 0
+            and len(ta) > 0
+        )
+
+    @staticmethod
+    def _normalize_router_state_keys(state: Dict[str, Any]) -> Dict[str, Any]:
+        if not any(isinstance(k, str) and k.startswith("_base_model.") for k in state):
+            return state
+        out: Dict[str, Any] = {}
+        for k, v in state.items():
+            if isinstance(k, str) and k.startswith("_base_model."):
+                out[k[len("_base_model.") :]] = v
+            else:
+                out[k] = v
+        return out
+
+    @staticmethod
+    def _canonical_router_buffer_key(name: str) -> str:
+        """Align buffer names across CLModel / PeftModel / saved checkpoint key variants."""
+        s = name
+        if s.startswith("_base_model."):
+            s = s[len("_base_model.") :]
+        while "base_model.model.model." in s:
+            s = s.replace("base_model.model.model.", "base_model.model.", 1)
+        return s
+
+    @classmethod
+    def _build_router_tensor_index(
+        cls,
+        state: Dict[str, Any],
+        buffer_markers: Tuple[str, ...] = _ROUTER_CARRY_BUFFER_MARKERS,
+    ) -> Dict[str, torch.Tensor]:
+        idx: Dict[str, torch.Tensor] = {}
+        for k, v in state.items():
+            if not isinstance(k, str) or not isinstance(v, torch.Tensor):
+                continue
+            if not any(m in k for m in buffer_markers):
+                continue
+            idx[cls._canonical_router_buffer_key(k)] = v
+        return idx
+
+    def _read_router_checkpoint_files(
+        self,
+        load_dir: str,
+        *,
+        carryover_bin: str = "same_state.bin",
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], str, str]:
+        st_path = os.path.join(load_dir, "adapter_model.safetensors")
+        bin_path = os.path.join(load_dir, carryover_bin)
+
+        state_from_bin: Optional[Dict[str, Any]] = None
+        if os.path.isfile(bin_path):
+            blob = torch.load(bin_path, map_location="cpu")
+            if isinstance(blob, dict):
+                state_from_bin = self._normalize_router_state_keys(blob)
+
+        state_from_st: Optional[Dict[str, Any]] = None
+        if os.path.isfile(st_path):
+            from safetensors.torch import load_file
+
+            flat = load_file(st_path)
+            state_from_st = self._tensor_bundle_to_same_state(flat)
+
+        return state_from_bin, state_from_st, bin_path, st_path
+
+    def _merge_router_checkpoint_states(
+        self,
+        state_from_bin: Optional[Dict[str, Any]],
+        state_from_st: Optional[Dict[str, Any]],
+        *,
+        bin_path: str = "",
+        st_path: str = "",
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        """Pick primary checkpoint source; prefer non-empty anchor lists, then merge the other file."""
+        state: Optional[Dict[str, Any]] = None
+        p = ""
+
+        if state_from_bin and self._state_has_nonempty_anchor_lists(state_from_bin):
+            state = dict(state_from_bin)
+            p = bin_path
+            if state_from_st:
+                for k, v in state_from_st.items():
+                    if k not in state:
+                        state[k] = v
+        elif state_from_st and self._state_has_nonempty_anchor_lists(state_from_st):
+            state = dict(state_from_st)
+            p = st_path
+            if state_from_bin:
+                for k, v in state_from_bin.items():
+                    if k not in state:
+                        state[k] = v
+        elif state_from_bin:
+            state = dict(state_from_bin)
+            p = bin_path
+        elif state_from_st:
+            state = dict(state_from_st)
+            p = st_path
+
+        return state, p
+
+    def carry_buffer_markers(self) -> Tuple[str, ...]:
+        """Substrings for carry-over buffers when loading ``same_state.bin`` / safetensors extras."""
+        return _ROUTER_CARRY_BUFFER_MARKERS
 
     def _similarities_to_mixture(self, sims: torch.Tensor) -> torch.Tensor:
         x = sims.to(dtype=torch.float32).reshape(-1)
@@ -447,16 +565,13 @@ class RouterIntegration(CLIntegration):
         anchor_lists_ok = False
         aux_ok = False
 
-        ia = state.get("image_anchors")
-        ta = state.get("text_anchors")
         if (
             self.image_anchors is not None
             and self.text_anchors is not None
-            and isinstance(ia, (list, tuple))
-            and isinstance(ta, (list, tuple))
-            and len(ia) > 0
-            and len(ta) > 0
+            and self._state_has_nonempty_anchor_lists(state)
         ):
+            ia = state["image_anchors"]
+            ta = state["text_anchors"]
             for i, p in enumerate(ia):
                 if i < len(self.image_anchors) and isinstance(p, torch.Tensor):
                     self.image_anchors[i].data.copy_(
